@@ -83,10 +83,14 @@ function parseArgs(argv) {
 
 function lanAddresses() {
   const out = [];
-  for (const [name, addresses] of Object.entries(os.networkInterfaces())) {
-    for (const address of addresses || []) {
-      if (address.family === "IPv4" && !address.internal) out.push({ name, address: address.address });
+  try {
+    for (const [name, addresses] of Object.entries(os.networkInterfaces())) {
+      for (const address of addresses || []) {
+        if (address.family === "IPv4" && !address.internal) out.push({ name, address: address.address });
+      }
     }
+  } catch (error) {
+    log("warn", "Cannot enumerate network interfaces", { error: error.message });
   }
   return out;
 }
@@ -118,6 +122,12 @@ async function runServer(args) {
 
   const { config, paths, createdToken, baseUrl, password } = await loadConfig({ overrides });
   if (createdToken) printTokenBanner(createdToken, paths);
+
+  if (args["rotate-token"]) {
+    log("info", "Token rotated. Restart the service to apply it:");
+    console.log("  systemctl --user restart ocsched.service");
+    return { config, paths };
+  }
 
   if (!password) {
     log("warn", "No OpenCode password found. If the server requires auth, set OPENCODE_PASSWORD.");
@@ -232,7 +242,7 @@ ReadWritePaths=${readWrite}
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=yes
 
 [Install]

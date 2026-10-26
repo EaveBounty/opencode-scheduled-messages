@@ -33,6 +33,8 @@ Initial release.
 - Login rate limit counts failures only; successful logins no longer lock the IP out.
 - Static JS/CSS is `no-cache`; service worker uses network-first for the shell and refuses to cache error responses.
 - Mobile sheet survives live re-renders, traps focus, restores focus on close, and moves above the iOS keyboard.
+- Bump `RestrictAddressFamilies` with `AF_NETLINK` so `os.networkInterfaces()` works inside the hardened systemd unit; interface enumeration no longer crashes startup.
+- `--rotate-token` rotates and exits instead of trying to bind a second server; restart the service to apply it.
 
 ### Known limitations
 

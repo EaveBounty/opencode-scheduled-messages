@@ -205,6 +205,8 @@ See [`SECURITY.md`](SECURITY.md).
 
 CLI flags: `--port`, `--bind`, `--lan`, `--public-url`, `--opencode-url`, `--opencode-public-url`, `--rotate-token`, `--log-level`.
 
+`--rotate-token` rotates the token and exits; restart the service (`systemctl --user restart ocsched`) to apply it. Rotating also invalidates existing browser sessions.
+
 ## API
 
 The gateway exposes a small same-origin API for the PWA:

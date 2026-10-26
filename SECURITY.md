@@ -49,7 +49,7 @@ The gateway is a **single-user local control plane**. It can send arbitrary text
 
 - [ ] Gateway binds `127.0.0.1` unless you intentionally use `--lan`.
 - [ ] Public access is behind HTTPS + an identity-aware proxy.
-- [ ] `ocsched --rotate-token` after sharing a screen or suspecting a leak.
+- [ ] `ocsched --rotate-token` after sharing a screen or suspecting a leak, then restart the service (`systemctl --user restart ocsched`).
 - [ ] `OPENCODE_PASSWORD` is not committed; `service.json` is not copied into the repo.
 - [ ] Permission policy is `wait` unless you have a specific reason.
 - [ ] Back up `state.db` and keep it out of synced public folders.

@@ -151,7 +151,7 @@ OpenCode V2's API is marked experimental. If a release changes a route or payloa
 
 | Symptom | Check |
 |---|---|
-| `401 unauthorized` in the UI | Token rotated; run `ocsched --rotate-token`, paste the new token |
+| `401 unauthorized` in the UI | Token rotated; run `ocsched --rotate-token`, restart the service, paste the new token |
 | `OpenCode rejected the gateway credentials` | `service.json` password changed; restart `ocsched` |
 | Sessions list empty | OpenCode has no root sessions, or `includeChildren` is off and only child sessions exist |
 | Queue never fires | `systemctl --user status ocsched`; `ocsched doctor`; clock/timezone |

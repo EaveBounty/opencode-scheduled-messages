@@ -173,6 +173,8 @@ DeepSeek 官方按量 API 在**谷时半价**。峰时是 **UTC 01:00–04:00 �
 
 CLI：`--port`、`--bind`、`--lan`、`--public-url`、`--opencode-url`、`--opencode-public-url`、`--rotate-token`、`--log-level`。
 
+`--rotate-token` 只轮换并退出；需要 `systemctl --user restart ocsched` 才会生效。轮换会同时使现有浏览器会话失效。
+
 ## API
 
 ```
