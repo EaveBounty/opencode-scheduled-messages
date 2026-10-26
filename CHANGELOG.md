@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Sheet actions were bound to `#app` while the sheet lives in `#sheet-host`, so close, backdrop, quick-time and submit did nothing; delegated events now live on the sheet host.
+- Scheduling feedback: submit shows a spinner, errors restore the button, and a successful schedule navigates to the visible queue.
+- Subagent-only activity is mapped from child sessions to the root session, so the UI shows `子代理运行中` instead of `空闲`.
+- Composer now has exactly two explicit actions: `立即发送` (confirmation sheet) and `定时发送` (time sheet); the misleading auto-send placeholder is gone.
+- UI refresh: calmer paper/forest palette, clearer status strip, mobile-safe two-action composer, larger sheet close target.
+
+
 ## [0.1.0] — 2026-10-26
 
 Initial release.

@@ -1,5 +1,5 @@
 // Bump VERSION on every release that changes the shell.
-const VERSION = "ocsm-v1";
+const VERSION = "ocsm-v3";
 const SHELL = [
   "/",
   "/app.css",

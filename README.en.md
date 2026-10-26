@@ -40,7 +40,7 @@ OpenCode V2 exposes a first-class HTTP API (`POST /api/session/{id}/prompt`), bu
 - **Existing session, not a new one.** The prompt is appended to the session you choose.
 - **Durable.** SQLite + a single 10-second tick; survives restarts and catches up inside a grace window.
 - **Honest about failure.** Busy sessions wait, offline servers retry, stale ideas become `missed` instead of silently firing at noon.
-- **Phone-first.** A ~80 KB PWA, bottom composer, safe-area support, installable over HTTPS.
+- **Phone-first.** A ~110 KB PWA, bottom composer, safe-area support, installable over HTTPS.
 - **Full-fidelity view when you need it.** One tap opens OpenCode's own native session UI through a deep link.
 - **Zero runtime dependencies.** `node:http`, `node:sqlite`, native `fetch`. `npm pack` is ~150 KB.
 
@@ -48,7 +48,7 @@ OpenCode V2 exposes a first-class HTTP API (`POST /api/session/{id}/prompt`), bu
 
 | | |
 |---|---|
-| **Session browser** | Lists root sessions from every project, shows running/idle, model, last activity, cost and tokens. |
+| **Session browser** | Lists root sessions from every project, shows running/idle/subagent activity, model, last activity, cost and tokens. |
 | **Existing-session send** | `POST /api/session/{id}/prompt` with a client-generated `msg_` id for idempotency. |
 | **New-session send** | Creates a session with title, directory, model and agent, then sends the message. |
 | **One-shot scheduling** | Absolute UTC time + original IANA timezone; the phone's timezone is used at creation. |
@@ -89,7 +89,7 @@ On first run it prints a one-time **initial password**:
 ────────────────────────────────────────────────────────────────
 ```
 
-Open <http://127.0.0.1:8788>, log in with the initial password, pick a session, write a sentence, choose **今晚 23:30**, and submit. At 23:30 the message is appended to that session. Change the password in **Settings → Change password**.
+Open <http://127.0.0.1:8788>, log in with the initial password, pick a session, and write a message. Use **Send now** for an immediate confirmation drawer, or **Schedule** to pick a time. The message is appended to that session at the chosen time. Change the password in **Settings → Change password**.
 
 > If an agent deployed this for you, it must relay the initial password privately and remind you to change it after login.
 

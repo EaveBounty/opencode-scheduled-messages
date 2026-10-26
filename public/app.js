@@ -10,8 +10,11 @@ const state = {
   messages: [],
   deepLink: null,
   sessions: [],
+  allSessions: [],
   projects: [],
   active: {},
+  activity: {},
+  sessionRoots: {},
   schedules: [],
   permissions: [],
   stats: {},
@@ -25,10 +28,11 @@ const state = {
   loading: false,
   busy: false,
   composerText: "",
-  composerBusy: false,
   eventSource: null,
   upstreamConnected: false,
   lastSync: 0,
+  lastActivitySync: 0,
+  activityTimer: null,
   canInstall: false,
   models: null,
   agents: null,
@@ -181,8 +185,91 @@ function modelLabel(model) {
   return `${model.id || model.modelID || "?"}${model.variant ? `#${model.variant}` : ""}`;
 }
 
-function isRunning(id) {
-  return Boolean(state.active?.[id]);
+function computeActivity(active, sessions) {
+  const byID = new Map((sessions || []).map((session) => [session.id, session]));
+  const sessionRoots = {};
+
+  // Walk parentID to the top-level session. OpenCode runs subagents in child
+  // sessions, so the root is not in /api/session/active while a child is.
+  for (const session of sessions || []) {
+    let current = session;
+    let guard = 0;
+    while (current?.parentID && guard++ < 16) {
+      const parent = byID.get(current.parentID);
+      if (!parent) {
+        current = { id: current.parentID };
+        break;
+      }
+      current = parent;
+    }
+    sessionRoots[session.id] = current?.id || session.id;
+  }
+
+  const roots = {};
+  for (const sessionID of Object.keys(active || {})) {
+    const rootID = sessionRoots[sessionID] || sessionID;
+    if (!roots[rootID]) roots[rootID] = { direct: false, subagents: 0, ids: [] };
+    roots[rootID].ids.push(sessionID);
+    if (rootID === sessionID) roots[rootID].direct = true;
+    else roots[rootID].subagents += 1;
+    // Keep the map complete even when a child was created after page load.
+    if (!sessionRoots[sessionID]) sessionRoots[sessionID] = rootID;
+  }
+
+  return { roots, sessionRoots };
+}
+
+function sessionActivity(id) {
+  return state.activity?.[id] || null;
+}
+
+function sessionStatus(id) {
+  const activity = sessionActivity(id);
+  if (activity?.direct) return "running";
+  if (activity?.subagents) return "subagent";
+  return "idle";
+}
+
+function statusLabel(status) {
+  if (status === "running") return "运行中";
+  if (status === "subagent") return "子代理运行中";
+  return "空闲";
+}
+
+function statusBadgeClass(status) {
+  if (status === "running") return "green";
+  if (status === "subagent") return "amber";
+  return "";
+}
+
+async function refreshActivity() {
+  try {
+    const before = state.sessionID ? sessionActivity(state.sessionID) : null;
+    const [active, sessions] = await Promise.all([
+      api("/api/active"),
+      api("/api/sessions?limit=100&includeChildren=1"),
+    ]);
+    state.active = unwrap(active) || {};
+    state.allSessions = unwrap(sessions) || [];
+    const built = computeActivity(state.active, state.allSessions);
+    state.activity = built.roots;
+    state.sessionRoots = built.sessionRoots;
+    state.lastActivitySync = Date.now();
+    if (state.view === "sessions") updateSessionList();
+    if (state.view === "session" && state.sessionID) {
+      const after = sessionActivity(state.sessionID);
+      if (before?.direct !== after?.direct || before?.subagents !== after?.subagents) {
+        renderSession();
+      }
+    }
+  } catch {
+    // Status is best-effort; the transcript remains usable.
+  }
+}
+
+function scheduleActivityRefresh() {
+  clearTimeout(state.activityTimer);
+  state.activityTimer = setTimeout(refreshActivity, 250);
 }
 
 function stateBadge(schedule) {
@@ -262,9 +349,10 @@ function renderBoot() {
 async function loadAll() {
   state.loading = true;
   try {
-    const [meta, sessions, projects, active, schedules] = await Promise.all([
+    const [meta, sessions, allSessions, projects, active, schedules] = await Promise.all([
       api("/api/state"),
       api("/api/sessions?limit=50"),
+      api("/api/sessions?limit=100&includeChildren=1"),
       api("/api/projects"),
       api("/api/active"),
       api("/api/schedules?limit=200"),
@@ -276,10 +364,15 @@ async function loadAll() {
     state.stats = meta.stats || {};
     state.upstreamConnected = Boolean(meta.server?.connected);
     state.sessions = unwrap(sessions) || [];
+    state.allSessions = unwrap(allSessions) || [];
     state.projects = unwrap(projects) || [];
     state.active = unwrap(active) || {};
+    const built = computeActivity(state.active, state.allSessions);
+    state.activity = built.roots;
+    state.sessionRoots = built.sessionRoots;
     state.schedules = unwrap(schedules) || [];
     state.lastSync = Date.now();
+    state.lastActivitySync = Date.now();
   } catch (error) {
     toast(error.message, "error");
   } finally {
@@ -364,7 +457,7 @@ function topbar({ title, sub, back = false, actions = "" }) {
         }
         <div class="brand">
           <div class="brand-copy">
-            <div class="brand-title">${esc(title)}</div>
+            <div class="brand-title" title="${esc(title)}">${esc(title)}</div>
             <div class="brand-sub">${sub}</div>
           </div>
         </div>
@@ -474,15 +567,17 @@ function updateSessionList() {
     <div class="stack">
       ${filtered
         .map((session) => {
-          const running = isRunning(session.id);
+          const activity = sessionActivity(session.id);
+          const status = sessionStatus(session.id);
           const model = session.model ? `${session.model.id}${session.model.variant ? `#${session.model.variant}` : ""}` : "";
           return `
             <article class="card link session-card" data-action="open-session" data-id="${esc(session.id)}" role="button" tabindex="0">
-              <div>
+              <div class="session-copy">
                 <div class="session-title">${esc(session.title || "未命名会话")}</div>
                 <div class="session-meta">
-                  <span class="dot ${running ? "running" : ""}"></span>
-                  <span>${running ? "运行中" : "空闲"}</span>
+                  <span class="dot ${status === "idle" ? "" : status}"></span>
+                  <span>${statusLabel(status)}</span>
+                  ${status !== "idle" && activity?.subagents ? `<span class="badge amber">${activity.subagents} 个子代理</span>` : ""}
                   <span class="faint">·</span>
                   <span>${esc(projectName(session.location?.directory))}</span>
                   <span class="faint">·</span>
@@ -503,14 +598,24 @@ function updateSessionList() {
 function renderSession() {
   const session = state.session;
   const title = session?.title || "会话";
-  const running = isRunning(state.sessionID);
+  const status = sessionStatus(state.sessionID);
+  const activity = sessionActivity(state.sessionID);
+  const statusText = statusLabel(status);
   const model = session?.model ? modelLabel(session.model) : "";
   const messages = state.messages;
+  const statusNote =
+    status === "subagent"
+      ? `${activity?.subagents || 1} 个子代理正在执行；主会话仍可接收消息`
+      : status === "running"
+        ? activity?.subagents
+          ? `主会话与 ${activity.subagents} 个子代理正在运行`
+          : "OpenCode 正在处理这一轮"
+        : "现在发送会直接进入这个会话";
 
   app.innerHTML = `
     ${topbar({
       title,
-      sub: `${esc(projectName(session?.location?.directory))} · ${esc(model || "默认模型")} · ${running ? "运行中" : "空闲"}`,
+      sub: `<span class="status-text ${status}">${statusText}</span> · ${esc(projectName(session?.location?.directory))} · ${esc(model || "默认模型")}`,
       back: true,
       actions: `
         ${state.deepLink ? `<a class="icon-btn" href="${esc(state.deepLink)}" target="_blank" rel="noopener noreferrer" aria-label="打开完整会话">${icon("link")}</a>` : ""}
@@ -518,6 +623,14 @@ function renderSession() {
       `,
     })}
     <main class="content no-nav" id="messages">
+      <div class="session-status ${status}">
+        <span class="dot ${status === "idle" ? "" : status}"></span>
+        <div class="session-status-copy">
+          <strong>${statusText}</strong>
+          <span>${esc(statusNote)}</span>
+        </div>
+        <span class="badge ${statusBadgeClass(status)}">${esc(model || "默认模型")}</span>
+      </div>
       ${
         state.permissions.length
           ? `<div class="notice danger" style="margin-bottom:12px">
@@ -533,21 +646,28 @@ function renderSession() {
         state.loading
           ? `<div class="empty"><div class="meter"><span style="width:60%"></span></div><p style="margin-top:12px">读取消息…</p></div>`
           : messages.length === 0
-            ? `<div class="empty"><div class="empty-icon">${icon("sessions", 24)}</div><h3>还没有消息</h3><p>在下面写一句，或安排到今晚低峰时段。</p></div>`
+            ? `<div class="empty"><div class="empty-icon">${icon("sessions", 24)}</div><h3>还没有消息</h3><p>在下面写一条消息，然后选择立即发送或定时发送。</p></div>`
             : `<div class="msg-list">${messages.map(renderMessage).join("")}</div>`
       }
-      ${running ? `<div class="idle-divider">正在运行…</div>` : ""}
+      ${status !== "idle" ? `<div class="idle-divider">${statusText}…</div>` : ""}
     </main>
     <div class="composer">
-      <div class="composer-tools">
-        <button class="chip" data-action="open-sheet" data-target="session">${icon("clock", 13)} 定时发送</button>
-        <button class="chip" data-action="send-now" ${state.composerBusy ? "disabled" : ""}>${icon("send", 13)} 立即发送</button>
+      <div class="composer-context">
+        <span class="dot ${status === "idle" ? "" : status}"></span>
+        <span>发送到 <strong>${esc(title)}</strong></span>
         <span class="spacer"></span>
-        <span class="small faint" style="align-self:center">⌘/Ctrl + Enter</span>
+        <span class="status-text ${status} small">${statusText}</span>
       </div>
       <div class="composer-inner">
-        <textarea id="composer-text" rows="1" placeholder="写一句… 到点自动发到这个会话">${esc(state.composerText)}</textarea>
-        <button class="send" data-action="send-now" ${state.composerBusy ? "disabled" : ""} aria-label="立即发送">${icon("send")}</button>
+        <textarea id="composer-text" rows="1" placeholder="输入消息…">${esc(state.composerText)}</textarea>
+      </div>
+      <div class="composer-actions">
+        <button class="composer-action primary" data-action="open-now-sheet">
+          ${icon("send", 16)} 立即发送
+        </button>
+        <button class="composer-action" data-action="open-sheet" data-target="session">
+          ${icon("clock", 16)} 定时发送
+        </button>
       </div>
     </div>`;
   autoResize();
@@ -901,6 +1021,10 @@ function renderSheet(force = false) {
 
   const isEdit = sheet.type === "edit";
   const isNew = sheet.type === "new";
+  const isNow = sheet.type === "now";
+  const targetSessionID = sheet.sessionID || sheet.schedule?.target?.sessionID || null;
+  const targetStatus = targetSessionID ? sessionStatus(targetSessionID) : "idle";
+  const targetStatusText = statusLabel(targetStatus);
   const projectOptions = state.projects
     .map(
       (project) =>
@@ -929,8 +1053,11 @@ function renderSheet(force = false) {
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
       <div class="sheet-handle"></div>
       <div class="sheet-head">
-        <h2 id="sheet-title">${isEdit ? "编辑定时" : isNew ? "新建会话并定时" : "定时发送"}</h2>
-        <button class="icon-btn" data-action="close-sheet" aria-label="关闭">${icon("close")}</button>
+        <div class="sheet-heading">
+          <span class="sheet-eyebrow">${isNow ? "发送到指定会话" : isEdit ? "修改已有安排" : isNew ? "创建新会话" : "到点写入指定会话"}</span>
+          <h2 id="sheet-title">${isEdit ? "编辑定时" : isNew ? "新建会话并定时" : isNow ? "立即发送" : "定时发送"}</h2>
+        </div>
+        <button class="icon-btn sheet-close" data-action="close-sheet" aria-label="关闭">${icon("close")}</button>
       </div>
 
       ${
@@ -953,18 +1080,24 @@ function renderSheet(force = false) {
                 <select class="select" id="sheet-agent"><option value="">默认</option>${agentOptions}</select>
               </div>
             </div>`
-          : `<div class="notice" style="margin-bottom:12px">
-              ${esc(sheet.targetTitle || state.session?.title || state.schedules.find((s) => s.id === sheet.schedule?.id)?.target?.title || "目标会话")}
-              <div class="small faint" style="margin-top:3px">${esc(projectName(sheet.targetDirectory || state.session?.location?.directory || sheet.schedule?.target?.directory))}</div>
+          : `<div class="sheet-target">
+              <div class="sheet-target-copy">
+                <strong>${esc(sheet.targetTitle || state.session?.title || state.schedules.find((s) => s.id === sheet.schedule?.id)?.target?.title || "目标会话")}</strong>
+                <span>${esc(projectName(sheet.targetDirectory || state.session?.location?.directory || sheet.schedule?.target?.directory))}</span>
+              </div>
+              <span class="badge ${statusBadgeClass(targetStatus)}"><span class="dot ${targetStatus === "idle" ? "" : targetStatus}"></span>${targetStatusText}</span>
             </div>`
       }
 
       <div class="field">
         <label for="sheet-text">消息</label>
-        <textarea class="textarea" id="sheet-text" placeholder="一句话就好">${esc(sheet.text)}</textarea>
+        <textarea class="textarea" id="sheet-text" placeholder="${isNow ? "输入要立即发送的消息" : "输入要定时发送的消息"}">${esc(sheet.text)}</textarea>
       </div>
 
-      <div class="field">
+      ${
+        isNow
+          ? ""
+          : `<div class="field">
         <label for="sheet-due">发送时间</label>
         <input class="input" id="sheet-due" type="datetime-local" value="${esc(sheet.due)}" />
         <div class="row wrap" style="margin-top:8px">
@@ -978,9 +1111,13 @@ function renderSheet(force = false) {
           <button class="chip" data-action="quick-time" data-when="now">现在</button>
         </div>
         <div class="field-hint">按你手机当前时区（${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)}）计算；服务端存绝对时间。</div>
-      </div>
+      </div>`
+      }
 
-      <details class="advanced" style="margin-top:14px">
+      ${
+        isNow
+          ? ""
+          : `<details class="advanced" style="margin-top:14px">
         <summary>高级：忙闲与权限</summary>
         <div class="grid-2" style="margin-top:10px">
           <div class="field">
@@ -1018,7 +1155,8 @@ function renderSheet(force = false) {
         <div class="field-hint" style="margin-top:8px">
           默认“等我手动处理”：权限请求会挂起这一轮，消息不会执行未授权工具。要完全无人值守，需提前选好策略。
         </div>
-      </details>
+      </details>`
+      }
 
       ${
         isEdit
@@ -1027,10 +1165,10 @@ function renderSheet(force = false) {
               <span class="spacer"></span>
               <button class="btn primary" data-action="submit-sheet">保存</button>
             </div>`
-          : `<button class="btn primary block" style="margin-top:16px" data-action="submit-sheet">${isNew ? "新建并定时" : "安排发送"}</button>`
+          : `<button class="btn primary block sheet-submit" style="margin-top:16px" data-action="submit-sheet">${isNow ? "确认发送" : isNew ? "新建并定时" : "安排发送"}</button>`
       }
       <div class="field-hint" style="text-align:center;margin-top:10px">
-        到点后若 OpenCode 离线，会在宽限时间内重试；超过宽限标记“已错过”。
+        ${isNow ? "确认后立即发送，不会创建定时任务。" : "到点后若 OpenCode 离线，会在宽限时间内重试；超过宽限标记“已错过”。"}
       </div>
     </div>`;
   sheetHost.appendChild(root);
@@ -1055,6 +1193,24 @@ function updatePeakHint() {
   hint.textContent = peak ? "DeepSeek 峰时 · 全额额度" : "DeepSeek 谷时 · 半额消耗";
 }
 
+function syncSheetField(target) {
+  if (!state.sheet || !target) return;
+  if (target.id === "sheet-text") state.sheet.text = target.value;
+  if (target.id === "sheet-due") {
+    state.sheet.due = target.value;
+    updatePeakHint();
+  }
+  if (target.id === "sheet-busy") state.sheet.busyPolicy = target.value;
+  if (target.id === "sheet-wait") state.sheet.waitMinutes = Number(target.value);
+  if (target.id === "sheet-grace") state.sheet.graceMinutes = Number(target.value);
+  if (target.id === "sheet-perm") state.sheet.permissionPolicy = target.value;
+  if (target.id === "sheet-perm-timeout") state.sheet.permissionTimeoutMinutes = Number(target.value);
+  if (target.id === "sheet-directory") state.sheet.directory = target.value;
+  if (target.id === "sheet-new-title") state.sheet.title = target.value;
+  if (target.id === "sheet-agent") state.sheet.agent = target.value;
+  if (target.id === "sheet-model") state.sheet.model = target.value;
+}
+
 function closeSheet() {
   if (!state.sheet) return;
   state.sheet = null;
@@ -1076,15 +1232,53 @@ function closeSheet() {
   }
 }
 
+function setButtonBusy(button, label) {
+  if (!button) return;
+  if (!button.dataset.idleHtml) button.dataset.idleHtml = button.innerHTML;
+  button.disabled = true;
+  button.classList.add("is-loading");
+  button.innerHTML = `<span class="spinner" aria-hidden="true"></span>${esc(label)}`;
+}
+
+function resetButton(button) {
+  if (!button) return;
+  button.disabled = false;
+  button.classList.remove("is-loading");
+  if (button.dataset.idleHtml) button.innerHTML = button.dataset.idleHtml;
+}
+
 async function submitSheet() {
   const sheet = state.sheet;
   if (!sheet) return;
   const text = document.getElementById("sheet-text")?.value?.trim() || "";
+  if (!text) return toast("写一条消息再发送", "error");
+
+  const button = document.querySelector('[data-action="submit-sheet"]');
+
+  if (sheet.type === "now") {
+    if (!sheet.sessionID) return toast("没有目标会话", "error");
+    setButtonBusy(button, "正在发送…");
+    try {
+      await api(`/api/sessions/${encodeURIComponent(sheet.sessionID)}/send`, {
+        method: "POST",
+        body: { text },
+      });
+      state.composerText = "";
+      closeSheet();
+      toast("已发送");
+      await refreshSession();
+    } catch (error) {
+      toast(error.message, "error");
+      resetButton(button);
+    }
+    return;
+  }
+
   const dueLocal = document.getElementById("sheet-due")?.value || "";
-  if (!text) return toast("写一句再安排", "error");
   if (!dueLocal) return toast("选一个发送时间", "error");
   const dueAt = new Date(dueLocal).getTime();
   if (!Number.isFinite(dueAt)) return toast("时间格式不对", "error");
+  if (dueAt <= Date.now()) return toast("发送时间已经过去，请重新选择", "error");
 
   const payload = {
     text,
@@ -1119,25 +1313,24 @@ async function submitSheet() {
     payload.target = { kind: "session", sessionID: sheet.sessionID };
   }
 
-  const button = document.querySelector('[data-action="submit-sheet"]');
-  if (button) button.disabled = true;
+  setButtonBusy(button, "正在安排…");
   try {
     await api("/api/schedules", { method: "POST", body: payload });
     state.composerText = "";
     closeSheet();
-    toast("已安排，到点自动发送");
+    toast("已安排，可在队列查看");
     await refreshSchedules();
-    if (sheet.type === "new") location.hash = "#/q";
-    else render();
+    state.queueTab = "active";
+    location.hash = "#/q";
   } catch (error) {
     toast(error.message, "error");
-    if (button) button.disabled = false;
+    resetButton(button);
   }
 }
 
 async function saveEdit(id, payload) {
   const button = document.querySelector('[data-action="submit-sheet"]');
-  if (button) button.disabled = true;
+  setButtonBusy(button, "正在保存…");
   try {
     await api(`/api/schedules/${encodeURIComponent(id)}`, { method: "PATCH", body: payload });
     closeSheet();
@@ -1146,7 +1339,7 @@ async function saveEdit(id, payload) {
     render();
   } catch (error) {
     toast(error.message, "error");
-    if (button) button.disabled = false;
+    resetButton(button);
   }
 }
 
@@ -1161,31 +1354,6 @@ async function refreshSchedules() {
 }
 
 // ---------------------------------------------------------------- actions
-
-async function sendNow() {
-  const id = state.sessionID;
-  const text = (document.getElementById("composer-text")?.value || state.composerText || "").trim();
-  if (!id || !text || state.composerBusy) return;
-  state.composerBusy = true;
-  state.composerText = text;
-  renderSession();
-  try {
-    await api(`/api/sessions/${encodeURIComponent(id)}/send`, {
-      method: "POST",
-      body: { text },
-    });
-    if (state.sessionID === id) {
-      state.composerText = "";
-      toast("已发送");
-      await refreshSession();
-    }
-  } catch (error) {
-    if (state.sessionID === id) toast(error.message, "error");
-  } finally {
-    state.composerBusy = false;
-    if (state.sessionID === id) renderSession();
-  }
-}
 
 async function refreshSession() {
   const id = state.sessionID;
@@ -1234,14 +1402,16 @@ async function loadPermissions(id, directory) {
 }
 
 async function cancelSchedule(id) {
-  if (!confirm("取消这条定时消息？")) return;
+  if (!confirm("取消这条定时消息？")) return false;
   try {
     await api(`/api/schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
     toast("已取消");
     await refreshSchedules();
     render();
+    return true;
   } catch (error) {
     toast(error.message, "error");
+    return false;
   }
 }
 
@@ -1291,6 +1461,8 @@ function setQuickTime(when) {
     due = new Date(now.getTime() + 60_000);
   }
   input.value = formatLocalInput(due);
+  if (state.sheet) state.sheet.due = input.value;
+  updatePeakHint();
 }
 
 async function handleEvent(event) {
@@ -1332,19 +1504,26 @@ async function handleEvent(event) {
     return;
   }
   if (String(event.type || "").startsWith("session.")) {
-    if (event.sessionID) {
-      const previous = Boolean(state.active[event.sessionID]);
-      if (event.type === "session.execution.succeeded" || event.type === "session.execution.failed") {
-        delete state.active[event.sessionID];
+    const sessionID = event.sessionID;
+    if (sessionID) {
+      const known = state.allSessions.some((session) => session.id === sessionID);
+      const rootID = state.sessionRoots[sessionID] || sessionID;
+      const previousStatus = sessionStatus(rootID);
+      if (event.type === "session.execution.succeeded" || event.type === "session.execution.failed" || event.type === "session.idle") {
+        delete state.active[sessionID];
       } else if (event.type === "session.execution.started") {
-        state.active[event.sessionID] = { type: "running" };
+        state.active[sessionID] = { type: "running" };
       }
-      if (previous !== Boolean(state.active[event.sessionID])) {
-        if (state.view === "sessions") updateSessionList();
-        if (state.sessionID === event.sessionID) renderSession();
-      }
+      const built = computeActivity(state.active, state.allSessions);
+      state.activity = built.roots;
+      state.sessionRoots = built.sessionRoots;
+      const nextStatus = sessionStatus(rootID);
+      if (state.view === "sessions") updateSessionList();
+      if (state.sessionID === rootID && previousStatus !== nextStatus) renderSession();
+      if (!known) scheduleActivityRefresh();
     }
-    if (state.sessionID && (!event.sessionID || event.sessionID === state.sessionID)) {
+    const rootID = sessionID ? state.sessionRoots[sessionID] || sessionID : state.sessionID;
+    if (state.sessionID && rootID === state.sessionID) {
       if (event.type === "session.execution.succeeded" || event.type === "session.idle" || event.type === "session.execution.failed") {
         scheduleSessionRefresh();
       }
@@ -1508,6 +1687,10 @@ app.addEventListener("click", (event) => {
     openSheet({ type: "session", sessionID: state.sessionID });
     return;
   }
+  if (action === "open-now-sheet") {
+    openSheet({ type: "now", sessionID: state.sessionID });
+    return;
+  }
   if (action === "close-sheet") {
     closeSheet();
     return;
@@ -1518,10 +1701,6 @@ app.addEventListener("click", (event) => {
   }
   if (action === "submit-sheet") {
     submitSheet();
-    return;
-  }
-  if (action === "send-now") {
-    sendNow();
     return;
   }
   if (action === "cancel-schedule") {
@@ -1537,7 +1716,9 @@ app.addEventListener("click", (event) => {
     return;
   }
   if (action === "delete-schedule") {
-    cancelSchedule(id).then(() => closeSheet());
+    cancelSchedule(id).then((cancelled) => {
+      if (cancelled) closeSheet();
+    });
     return;
   }
   if (action === "logout") {
@@ -1562,22 +1743,47 @@ app.addEventListener("click", (event) => {
   }
 });
 
+// The sheet lives in #sheet-host, a sibling of #app. Without this listener
+// every button inside the sheet (close, quick time, submit) is dead.
+sheetHost.addEventListener("click", (event) => {
+  if (event.target.classList.contains("sheet-backdrop")) {
+    closeSheet();
+    return;
+  }
+  const actionEl = event.target.closest("[data-action]");
+  if (!actionEl || !sheetHost.contains(actionEl)) return;
+  const action = actionEl.dataset.action;
+  const id = actionEl.dataset.id;
+  if (action === "close-sheet") {
+    closeSheet();
+    return;
+  }
+  if (action === "submit-sheet") {
+    submitSheet();
+    return;
+  }
+  if (action === "quick-time") {
+    setQuickTime(actionEl.dataset.when);
+    return;
+  }
+  if (action === "delete-schedule") {
+    cancelSchedule(id).then((cancelled) => {
+      if (cancelled) closeSheet();
+    });
+  }
+});
+
+sheetHost.addEventListener("input", (event) => {
+  if (event.target.closest?.("#sheet-root")) syncSheetField(event.target);
+});
+
+sheetHost.addEventListener("change", (event) => {
+  if (event.target.closest?.("#sheet-root")) syncSheetField(event.target);
+});
+
 app.addEventListener("input", (event) => {
   if (state.sheet && event.target.closest?.("#sheet-root")) {
-    if (event.target.id === "sheet-text") state.sheet.text = event.target.value;
-    if (event.target.id === "sheet-due") {
-      state.sheet.due = event.target.value;
-      updatePeakHint();
-    }
-    if (event.target.id === "sheet-busy") state.sheet.busyPolicy = event.target.value;
-    if (event.target.id === "sheet-wait") state.sheet.waitMinutes = Number(event.target.value);
-    if (event.target.id === "sheet-grace") state.sheet.graceMinutes = Number(event.target.value);
-    if (event.target.id === "sheet-perm") state.sheet.permissionPolicy = event.target.value;
-    if (event.target.id === "sheet-perm-timeout") state.sheet.permissionTimeoutMinutes = Number(event.target.value);
-    if (event.target.id === "sheet-directory") state.sheet.directory = event.target.value;
-    if (event.target.id === "sheet-new-title") state.sheet.title = event.target.value;
-    if (event.target.id === "sheet-agent") state.sheet.agent = event.target.value;
-    if (event.target.id === "sheet-model") state.sheet.model = event.target.value;
+    syncSheetField(event.target);
   }
   if (event.target.id === "search") {
     state.filters.search = event.target.value;
@@ -1588,7 +1794,6 @@ app.addEventListener("input", (event) => {
     autoResize();
   }
   if (event.target.id === "sheet-busy") {
-    const label = event.target.selectedOptions[0]?.textContent || "";
     if (state.sheet) state.sheet.busyPolicy = event.target.value;
     if (state.sheet && event.target.value === "wait") {
       const waitInput = document.getElementById("sheet-wait");
@@ -1596,7 +1801,6 @@ app.addEventListener("input", (event) => {
         event.target.options[0].textContent = `等空闲（最多 ${Number(waitInput.value)} 分钟）`;
       }
     }
-    void label;
   }
 });
 
@@ -1667,10 +1871,6 @@ app.addEventListener("submit", (event) => {
 });
 
 app.addEventListener("keydown", (event) => {
-  if (event.target.id === "composer-text" && (event.metaKey || event.ctrlKey) && event.key === "Enter") {
-    event.preventDefault();
-    sendNow();
-  }
   if (
     (event.key === "Enter" || event.key === " ") &&
     event.target.matches?.('[data-action="open-session"]')
@@ -1724,14 +1924,8 @@ document.addEventListener("visibilitychange", () => {
 
 setInterval(() => {
   if (!state.authed || document.visibilityState !== "visible") return;
-  if (Date.now() - state.lastSync < 45_000) return;
-  api("/api/active")
-    .then((data) => {
-      state.active = unwrap(data) || {};
-      state.lastSync = Date.now();
-      if (state.view === "sessions") updateSessionList();
-    })
-    .catch(() => {});
+  if (Date.now() - state.lastActivitySync < 45_000) return;
+  refreshActivity();
 }, 45_000);
 
 init();
