@@ -782,7 +782,7 @@ tailscale serve --bg --https=8443 http://127.0.0.1:4096
 <p>Not in 0.1. Schedules are one-shot by design: the use case is this thought, in this thread, tonight. Recurring jobs would spend tokens unattended, so the data model leaves room but the feature is deliberately absent.</p>
 
 <h3>How do I log in the first time, and what if I lose the password?</h3>
-<p>On first start the terminal prints the initial password once; that string is the login credential. Sign in, then change it in Settings, where it is stored as a scrypt hash. If you lose it, reset the credential in the data directory and restart; OpenCode itself is untouched.</p>
+<p>On first start the terminal prints the initial password once; that string is the login credential. Sign in, then change it in Settings, where it is stored as a scrypt hash. If you lose it, run <code>ocsched --rotate-token</code> and restart the service; OpenCode itself is untouched.</p>
 
 <h3>How much memory and disk does it use?</h3>
 <p>A 0.1.0 instance measured 70–110 MB RSS with one SSE connection and peaked near 150 MB; the generated systemd unit caps memory at 192 MB soft and 320 MB hard. The SQLite file lives under ~/.local/share and uses WAL.</p>
@@ -814,7 +814,7 @@ tailscale serve --bg --https=8443 http://127.0.0.1:4096
 <p>0.1 不支持，只有一次性定时。循环任务会在无人看守时持续消耗 token，因此被刻意留到后续版本，而不是做成一个默认开启的开关。</p>
 
 <h3>第一次登录的密码是什么？忘了怎么办？</h3>
-<p>首次启动时终端只打印一次初始密码，那串就是登录凭据；登录后在 Settings 里改成自己的密码，服务端以 scrypt 哈希保存，明文不落盘。忘记后可以在数据目录里重置凭据再重启，不需要改 OpenCode。</p>
+<p>首次启动时终端只打印一次初始密码，那串就是登录凭据；登录后在 Settings 里改成自己的密码，服务端以 scrypt 哈希保存，明文不落盘。忘记后运行 <code>ocsched --rotate-token</code> 并重启服务即可，不需要改 OpenCode。</p>
 
 <h3>它占用多少内存和磁盘？</h3>
 <p>0.1.0 实测空闲时 RSS 70–110 MB，在一条 SSE 连接下峰值接近 150 MB；生成的 systemd 单元把内存限制在软 192 MB、硬 320 MB。SQLite 文件在 ~/.local/share 下，使用 WAL 模式。</p>
