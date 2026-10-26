@@ -1,0 +1,25 @@
+node_modules/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.db-wal
+*.db-shm
+coverage/
+dist/
+screenshots/*.tmp
+
+# local test artifacts
+.test-data/
+.test-config/
+.test-shots/
+.test-tmp/
+.test-cookie
+.test-server.log
+.test-server.pid
+.test-ui.mjs
+.test-shot.mjs
+*.tgz

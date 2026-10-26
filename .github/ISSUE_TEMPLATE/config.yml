@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Deployment questions
+    url: https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/DEPLOY.md
+    about: systemd, Tailscale, Cloudflare Tunnel, nginx, troubleshooting
+  - name: Security report
+    url: https://github.com/EaveBounty/opencode-scheduled-messages/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue

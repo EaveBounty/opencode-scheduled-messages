@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.x", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax check
+        run: |
+          node --check bin/ocsched.js
+          node --check src/main.js
+          node --check public/app.js
+      - name: Test (no dependencies, no network)
+        run: npm test
+      - name: Package dry run
+        run: npm pack --dry-run
+
+  size:
+    name: Package size
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+      - name: Enforce a small tarball
+        run: |
+          npm pack --json > pack.json
+          node -e '
+            const p = require("./pack.json")[0];
+            console.log("tarball bytes:", p.size, "unpacked:", p.unpackedSize);
+            if (p.size > 300000) { console.error("Package is too large"); process.exit(1); }
+          '

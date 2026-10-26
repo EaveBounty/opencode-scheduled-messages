@@ -1,0 +1,67 @@
+{
+  "name": "opencode-scheduled-messages",
+  "version": "0.1.0",
+  "description": "Schedule messages to existing OpenCode V2 sessions. Write at peak, auto-send off-peak. Self-hosted, zero-dependency PWA with cron-style scheduling, mobile support, and Tailscale/Cloudflare compatibility.",
+  "type": "module",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "author": "EaveBounty",
+  "homepage": "https://github.com/EaveBounty/opencode-scheduled-messages#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EaveBounty/opencode-scheduled-messages.git"
+  },
+  "bugs": {
+    "url": "https://github.com/EaveBounty/opencode-scheduled-messages/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-v2",
+    "scheduled-messages",
+    "scheduler",
+    "cron",
+    "deferred",
+    "deepseek",
+    "off-peak",
+    "pwa",
+    "mobile",
+    "self-hosted",
+    "tailscale",
+    "cloudflare-tunnel",
+    "sqlite",
+    "zero-dependencies",
+    "ai-agent",
+    "coding-agent",
+    "automation"
+  ],
+  "bin": {
+    "ocsched": "bin/ocsched.js",
+    "opencode-scheduled-messages": "bin/ocsched.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "public/",
+    "docs/ARCHITECTURE.md",
+    "docs/DEPLOY.md",
+    "docs/API.md",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning bin/ocsched.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch bin/ocsched.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "check": "node --check bin/ocsched.js && node --check src/main.js",
+    "pack:check": "npm pack --dry-run",
+    "service:print": "node bin/ocsched.js service print"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a capability or a better interaction
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation, not the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Which layer?
+      options:
+        - Scheduler / state machine
+        - OpenCode API integration
+        - Web UI / PWA
+        - Deployment (systemd / Tailscale / Cloudflare)
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Project constraints
+      options:
+        - label: This can be done without a runtime dependency.
+        - label: This can be done without forking or modifying OpenCode.
+        - label: This does not make auto-approving permissions the default.

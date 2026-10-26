@@ -1,0 +1,83 @@
+name: Bug report
+description: Something broke, or a scheduled message did not behave as expected
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Do **not** paste access tokens, `service.json`, or full private session transcripts. Redact paths and titles.
+  - type: input
+    id: version
+    attributes:
+      label: opencode-scheduled-messages version
+      placeholder: "0.1.0 (`ocsched --version`)"
+    validations:
+      required: true
+  - type: input
+    id: opencode
+    attributes:
+      label: OpenCode version and deployment
+      placeholder: "v2.1.1, `opencode serve --service`, Linux"
+    validations:
+      required: true
+  - type: dropdown
+    id: access
+    attributes:
+      label: How is the gateway accessed?
+      options:
+        - Loopback only
+        - LAN (--lan)
+        - Tailscale Serve
+        - Cloudflare Tunnel
+        - nginx / Caddy
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: What happened?
+      options:
+        - Message sent to the wrong time or not at all
+        - Duplicate message
+        - Stuck in waiting / sending / accepted
+        - Permission blocked the turn
+        - Login / cookie / CSRF
+        - SSE disconnected
+        - PWA / mobile layout
+        - Crash or high memory
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Select session ...
+        2. Schedule at ...
+        3. At T-0 ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs / schedule row
+      description: "`journalctl --user -u ocsched -n 100` or `GET /api/schedules/:id` with secrets removed."
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I removed tokens, passwords, and private session content.
+          required: true
+        - label: I ran `ocsched doctor`.
+          required: true

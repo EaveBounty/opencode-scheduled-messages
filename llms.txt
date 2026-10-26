@@ -1,0 +1,38 @@
+# opencode-scheduled-messages
+
+> Schedule a message into an existing OpenCode V2 session. Write at peak, send off-peak. Single-user, self-hosted, zero-dependency Node gateway + mobile PWA + SQLite queue.
+
+## What it is
+
+- A scheduler for OpenCode V2 that appends a prompt to a **specific existing session** (`POST /api/session/{id}/prompt`), or creates a new session and prompts it.
+- A mobile-first PWA with a session browser, compact transcript, queue and per-schedule policies.
+- A single Node process (Node ≥22.6, no runtime dependencies), SQLite persistence, SSE, systemd unit generator.
+- A deep-link bridge to OpenCode's native web UI for full transcript fidelity.
+
+## What it is not
+
+- Not an OpenCode plugin. V2 plugins cannot register HTTP routes or own a durable timer.
+- Not a fork of OpenCode, and it does not inject scripts into the native web UI.
+- Not multi-user. One gateway, one OpenCode instance, one access token.
+- Not a recurring cron system in 0.1; schedules are one-shot.
+
+## Key facts
+
+- OpenCode API: `POST /api/session/{id}/prompt` with a client-generated `msg_` id for idempotency.
+- Busy policy: wait up to 30 minutes (default), steer, or skip.
+- Missed-run policy: 120-minute grace, then `missed` for manual resend.
+- Permissions: wait by default; per-schedule reject / read-only / allow-all.
+- Resource profile: ~70–110 MB RSS, ~150 KB npm tarball, <1 MB DB per year.
+- DeepSeek peak (UTC): Mon–Fri 01:00–04:00 and 06:00–10:00; off-peak otherwise.
+  On opencode-go, off-peak halves the allowance consumed, not the subscription price.
+- License: PolyForm Noncommercial 1.0.0.
+
+## Canonical links
+
+- Repository: https://github.com/EaveBounty/opencode-scheduled-messages
+- npm: https://www.npmjs.com/package/opencode-scheduled-messages
+- Architecture: https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/ARCHITECTURE.md
+- Deploy: https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/DEPLOY.md
+- API: https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/API.md
+- DeepSeek pricing source: https://api-docs.deepseek.com/quick_start/pricing
+- OpenCode server docs: https://opencode.ai/docs/server/
