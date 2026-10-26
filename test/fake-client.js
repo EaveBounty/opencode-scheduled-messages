@@ -8,6 +8,7 @@ export class FakeClient {
     this.promptError = options.promptError ?? null;
     this.createError = options.createError ?? null;
     this.permissions = options.permissions ?? [];
+    this.inbox = options.inbox ?? [];
     this.prompts = [];
     this.created = [];
     this.permissionReplies = [];
@@ -75,6 +76,18 @@ export class FakeClient {
   async listPermissions() {
     this.calls.push(["listPermissions"]);
     return { data: this.permissions };
+  }
+
+  async listInbox() {
+    this.calls.push(["listInbox"]);
+    return { data: this.inbox };
+  }
+
+  async getMessage(sessionID, messageID) {
+    this.calls.push(["getMessage", sessionID, messageID]);
+    const item = this.inbox.find((entry) => entry.id === messageID);
+    if (!item) throw new OpenCodeError("not found", { status: 404 });
+    return item;
   }
 
   async replyPermission(sessionID, requestID, decision, message) {

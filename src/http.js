@@ -4,7 +4,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   base64url,
-  clamp,
   fromIso,
   hmac,
   isValidTimezone,
@@ -60,7 +59,12 @@ function parseCookies(header) {
   for (const part of String(header || "").split(";")) {
     const index = part.indexOf("=");
     if (index === -1) continue;
-    out[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
+    const raw = part.slice(index + 1).trim();
+    try {
+      out[part.slice(0, index).trim()] = decodeURIComponent(raw);
+    } catch {
+      out[part.slice(0, index).trim()] = raw;
+    }
   }
   return out;
 }
@@ -197,6 +201,9 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
 
   function originAllowed(req, auth) {
     if (auth.via === "bearer") return true;
+    // Modern browsers mark same-origin fetches explicitly; this keeps writes
+    // working behind Tailscale/Cloudflare even if the proxy rewrites Host.
+    if (String(req.headers["sec-fetch-site"] || "") === "same-origin") return true;
     const origin = String(req.headers.origin || "");
     if (!origin) return false;
     try {
@@ -214,12 +221,20 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
     const now = Date.now();
     const record = loginAttempts.get(ip);
     if (!record || now > record.reset) {
-      loginAttempts.set(ip, { count: 1, reset: now + 15 * 60_000 });
+      loginAttempts.set(ip, { count: 0, reset: now + 15 * 60_000 });
       return true;
     }
-    if (record.count >= 10) return false;
+    return record.count < 10;
+  }
+
+  function recordLoginFailure(ip) {
+    const now = Date.now();
+    const record = loginAttempts.get(ip);
+    if (!record || now > record.reset) {
+      loginAttempts.set(ip, { count: 1, reset: now + 15 * 60_000 });
+      return;
+    }
     record.count += 1;
-    return true;
   }
 
   function setSessionCookie(req, res) {
@@ -265,8 +280,10 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
     const body = await readJson(req);
     const token = String(body.token || "");
     if (!token || !safeEqual(hashToken(token), config.auth.tokenHash)) {
+      recordLoginFailure(ip);
       throw new HttpError(401, "invalid_token", "Invalid access token");
     }
+    loginAttempts.delete(ip);
     setSessionCookie(req, res);
     sendJson(res, 200, { ok: true });
   }, { auth: false, csrf: false });
@@ -351,7 +368,8 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
   // ---- OpenCode read-through ----------------------------------------------
 
   route("GET", "/api/sessions", async ({ req, res, url }) => {
-    const limit = clamp(Number(url.searchParams.get("limit") || 50), 1, 100);
+    const requested = Number(url.searchParams.get("limit") || 50);
+    const limit = Number.isFinite(requested) ? Math.min(100, Math.max(1, Math.round(requested))) : 50;
     const order = url.searchParams.get("order") === "asc" ? "asc" : "desc";
     const includeChildren = url.searchParams.get("includeChildren") === "1";
     const data = await client.listSessions({
@@ -369,7 +387,8 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
   });
 
   route("GET", "/api/sessions/:id/messages", async ({ res, params, url }) => {
-    const limit = clamp(Number(url.searchParams.get("limit") || 30), 1, 100);
+    const requested = Number(url.searchParams.get("limit") || 30);
+    const limit = Number.isFinite(requested) ? Math.min(100, Math.max(1, Math.round(requested))) : 30;
     const order = url.searchParams.get("order") === "asc" ? "asc" : "desc";
     const data = await client.listMessages(params.id, {
       limit,
@@ -442,8 +461,10 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
         if (!SCHEDULE_STATES.includes(state)) bad(`Unknown state: ${state}`);
       }
     }
-    const limit = clamp(Number(url.searchParams.get("limit") || 100), 1, 200);
-    const offset = Math.max(0, Number(url.searchParams.get("offset") || 0));
+    const requested = Number(url.searchParams.get("limit") || 100);
+    const limit = Number.isFinite(requested) ? Math.min(200, Math.max(1, Math.round(requested))) : 100;
+    const offsetRaw = Number(url.searchParams.get("offset") || 0);
+    const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.round(offsetRaw)) : 0;
     sendJson(res, 200, {
       data: store.list({ states, limit, offset }).map(scheduleView),
       stats: store.stats(),
@@ -556,6 +577,13 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
     if (!["pending", "waiting"].includes(existing.state)) {
       throw new HttpError(409, "not_editable", "Only pending or waiting schedules can be edited");
     }
+    if (existing.attempt > 0) {
+      throw new HttpError(
+        409,
+        "not_editable",
+        "This schedule already attempted a send; cancel it and create a new one",
+      );
+    }
     const body = await readJson(req);
     const patch = {};
     if (body.text !== undefined) {
@@ -592,6 +620,9 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
   route("DELETE", "/api/schedules/:id", async ({ res, params }) => {
     const existing = store.get(params.id);
     if (!existing) throw new HttpError(404, "not_found", "Schedule not found");
+    if (!["pending", "waiting", "missed", "failed"].includes(existing.state)) {
+      throw new HttpError(409, "not_cancellable", "This schedule can no longer be cancelled");
+    }
     const updated = store.markCancelled(params.id);
     sendJson(res, 200, { data: scheduleView(updated) });
   });
@@ -629,7 +660,12 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
 
   // ---- live events ---------------------------------------------------------
 
+  const sseClients = new Set();
+
   route("GET", "/api/events", async ({ req, res, url }) => {
+    if (sseClients.size >= 50) {
+      throw new HttpError(503, "too_many_streams", "Too many live event clients");
+    }
     const sessionFilter = url.searchParams.get("session") || null;
     const includeDeltas = url.searchParams.get("deltas") === "1";
     res.writeHead(200, {
@@ -642,13 +678,21 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
     req.socket.setTimeout(0);
     res.write("retry: 3000\n\n");
 
+    const client = { blocked: false };
+    sseClients.add(client);
     const write = (event) => {
-      if (res.writableEnded) return;
+      if (res.writableEnded || client.blocked) return;
       if (!includeDeltas && typeof event.type === "string" && /(\.delta$|\.streamed$)/.test(event.type)) {
         return;
       }
       if (sessionFilter && event.sessionID && event.sessionID !== sessionFilter) return;
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      const ok = res.write(`data: ${JSON.stringify(event)}\n\n`);
+      if (!ok) {
+        client.blocked = true;
+        res.once("drain", () => {
+          client.blocked = false;
+        });
+      }
     };
 
     write({
@@ -663,17 +707,19 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
     const schedulerListener = (event) => write(event);
     scheduler.events.on("event", schedulerListener);
     const heartbeat = setInterval(() => {
-      if (!res.writableEnded) res.write(": ping\n\n");
+      if (!res.writableEnded && !client.blocked) res.write(": ping\n\n");
     }, 25_000);
     heartbeat.unref?.();
 
     const cleanup = () => {
       clearInterval(heartbeat);
+      sseClients.delete(client);
       unsubscribeHub();
       scheduler.events.off("event", schedulerListener);
     };
     req.on("close", cleanup);
     req.on("aborted", cleanup);
+    res.on("error", cleanup);
   });
 
   // ---- static PWA ----------------------------------------------------------
@@ -713,7 +759,7 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
     }
     const body = await readFile(file);
     const ext = path.extname(file).toLowerCase();
-    const noCache = [".html", ".webmanifest"].includes(ext) || file.endsWith("sw.js");
+    const noCache = [".html", ".webmanifest", ".js", ".css"].includes(ext) || file.endsWith("sw.js");
     res.writeHead(200, {
       "content-type": MIME[ext] || "application/octet-stream",
       "content-length": body.length,
@@ -762,7 +808,15 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
           handler: candidate.handler,
           auth: candidate.auth,
           csrf: candidate.csrf,
-          params: Object.fromEntries(candidate.keys.map((key, index) => [key, decodeURIComponent(match[index + 1])])),
+          params: Object.fromEntries(
+            candidate.keys.map((key, index) => {
+              try {
+                return [key, decodeURIComponent(match[index + 1])];
+              } catch {
+                throw new HttpError(400, "bad_path", "Invalid path encoding");
+              }
+            }),
+          ),
         };
         break;
       }

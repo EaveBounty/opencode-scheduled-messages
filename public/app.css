@@ -5,7 +5,7 @@
   --bg-input: #0d1119;
   --text: #eef1f8;
   --muted: #9aa3b5;
-  --faint: #6b7488;
+  --faint: #8b94a8;
   --border: rgba(255, 255, 255, 0.09);
   --border-strong: rgba(255, 255, 255, 0.16);
   --accent: #6f8cff;
@@ -35,7 +35,7 @@
     --bg-input: #ffffff;
     --text: #161a23;
     --muted: #5d6577;
-    --faint: #8a92a3;
+    --faint: #6a7285;
     --border: rgba(10, 15, 30, 0.09);
     --border-strong: rgba(10, 15, 30, 0.18);
     --accent: #3b5cf6;
@@ -611,7 +611,7 @@ h3 {
 .bottom-nav {
   position: fixed;
   left: 50%;
-  bottom: 0;
+  bottom: var(--keyboard-offset, 0px);
   transform: translateX(-50%);
   width: 100%;
   max-width: 880px;
@@ -623,6 +623,7 @@ h3 {
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   border-top: 1px solid var(--border);
+  transition: bottom 0.12s ease;
 }
 
 .tab {
@@ -844,7 +845,7 @@ details.tool .tool-name {
 .composer {
   position: fixed;
   left: 50%;
-  bottom: 0;
+  bottom: var(--keyboard-offset, 0px);
   transform: translateX(-50%);
   width: 100%;
   max-width: 880px;
@@ -854,6 +855,7 @@ details.tool .tool-name {
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   border-top: 1px solid var(--border);
+  transition: bottom 0.12s ease;
 }
 
 .composer-inner {

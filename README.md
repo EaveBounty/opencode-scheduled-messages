@@ -2,6 +2,8 @@
 
 **Schedule a message into an existing OpenCode V2 session — write at peak, send off-peak.**
 
+[Website](https://eavebounty.github.io/opencode-scheduled-messages/) · [npm](https://www.npmjs.com/package/opencode-scheduled-messages) · [Architecture](docs/ARCHITECTURE.md) · [Deploy](docs/DEPLOY.md)
+
 [![CI](https://github.com/EaveBounty/opencode-scheduled-messages/actions/workflows/ci.yml/badge.svg)](https://github.com/EaveBounty/opencode-scheduled-messages/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/opencode-scheduled-messages.svg)](https://www.npmjs.com/package/opencode-scheduled-messages)
 [![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
@@ -144,7 +146,8 @@ Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ### State machine
 
 ```
-pending ──► sending ──► accepted ──► done
+pending ──► sending ──► accepted (sent)
+                                  └── done (reserved)
    │           │
    │           ├──► pending   (transient error, same msg id)
    │           ├──► missed    (grace expired / stayed busy)
@@ -155,7 +158,7 @@ pending ──► sending ──► accepted ──► done
 
 ### Idempotency and “did it actually send?”
 
-`200 OK` means OpenCode accepted the prompt into its inbox, not that the model finished. The UI labels that as **已发送 / accepted**. Execution progress is visible in the native session or through live SSE events. If OpenCode was offline, nothing was sent and the retry is safe. If a request times out after the server accepted it, reusing the same `msg_` id returns the original message instead of duplicating it.
+`200 OK` means OpenCode accepted the prompt into its inbox, not that the model finished. The UI labels that as **已发送 / accepted** (terminal in 0.1). Execution progress is visible in the native session or through live SSE events. If OpenCode was offline, nothing was sent and the retry is safe. If a request times out after the server accepted it, reusing the same `msg_` id returns the original message instead of duplicating it.
 
 ## DeepSeek peak / off-peak
 
@@ -269,7 +272,7 @@ Not in 0.1. The data model has room for it, but one-shot is deliberate: the use 
 ```bash
 git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
 cd opencode-scheduled-messages
-npm test                 # 32 tests, no network, no dependencies
+npm test                 # 39 tests, no network, no dependencies
 node bin/ocsched.js --help
 ```
 

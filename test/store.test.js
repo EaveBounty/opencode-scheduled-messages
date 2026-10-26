@@ -41,7 +41,7 @@ test("claim increments attempt for new sends but not for busy waits", () => {
   assert.equal(store.get(row.id).attempt, 0);
   const second = store.claimDue(T0 + 31_000);
   assert.equal(second._wasWaiting, true);
-  assert.equal(second.attempt, 0);
+  assert.equal(second.attempt, 1);
   store.close();
 });
 

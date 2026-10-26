@@ -2,7 +2,7 @@
 
 **给 OpenCode V2 的指定会话定时发消息：白天写，低峰发。**
 
-[English](README.md) · [PolyForm Noncommercial 1.0.0](LICENSE)
+[English](README.md) · [项目主页](https://eavebounty.github.io/opencode-scheduled-messages/) · [PolyForm Noncommercial 1.0.0](LICENSE)
 
 OpenCode V2 有完整的 HTTP API，但没有 cron 或延时发送。现有工具大多在每次任务时**新建会话**，想法就丢了原来的上下文。这个项目反过来：把一句话排队到**你指定的已有会话**（也可以新建），到点通过官方 V2 API 发进去。
 
@@ -117,7 +117,8 @@ journalctl --user -u ocsched -f
 ### 状态机
 
 ```
-pending ──► sending ──► accepted ──► done
+pending ──► sending ──► accepted（已发送）
+                                  └── done（预留）
    │           │
    │           ├──► pending   （临时错误，同 msg id 重试）
    │           ├──► missed    （超宽限 / 一直忙）
@@ -126,7 +127,7 @@ pending ──► sending ──► accepted ──► done
    └──► cancelled
 ```
 
-`200 OK` 只代表 OpenCode 接受进 inbox，不代表模型跑完；UI 标为“已发送”。真正的执行过程看原生会话或 SSE。OpenCode 离线时什么也没发，重试安全；若请求超时但服务端已接受，复用同一 id 会拿回原消息，不会重复。
+`200 OK` 只代表 OpenCode 接受进 inbox，不代表模型跑完；UI 标为“已发送”（0.1 的终态）。真正的执行过程看原生会话或 SSE。OpenCode 离线时什么也没发，重试安全；若请求超时但服务端已接受，复用同一 id 会拿回原消息，不会重复。
 
 ## DeepSeek 峰谷：先讲清楚
 
@@ -233,7 +234,7 @@ V2.1 原生不支持。它有 durable inbox（`delivery: queue`），但没有�
 ```bash
 git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
 cd opencode-scheduled-messages
-npm test          # 32 个测试，无网络、无依赖
+npm test          # 39 个测试，无网络、无依赖
 node bin/ocsched.js --help
 ```
 

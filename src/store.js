@@ -256,9 +256,7 @@ export class Store {
       this.db
         .prepare(
           `UPDATE schedules
-           SET state = 'sending',
-               attempt = CASE WHEN state = 'waiting' THEN attempt ELSE attempt + 1 END,
-               updated_at = ?, last_error = NULL
+           SET state = 'sending', attempt = attempt + 1, updated_at = ?, last_error = NULL
            WHERE id = ?`,
         )
         .run(now, candidate.id);

@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { EventEmitter } from "node:events";
-import { readFile } from "node:fs/promises";
 import { Store } from "../src/store.js";
 import { OpenCodeClient } from "../src/opencode.js";
 import { createApp } from "../src/http.js";
@@ -226,6 +225,59 @@ test("direct send forwards to OpenCode with a client-generated id", async () => 
   assert.equal(ctx.upstream.state.prompts.length, 1);
   assert.equal(ctx.upstream.state.prompts[0].body.text, "hello now");
   assert.equal(ctx.upstream.state.prompts[0].body.id, payload.data.messageID);
+  await ctx.close();
+});
+
+test("cookie writes accept a same-origin Sec-Fetch-Site", async () => {
+  const ctx = await setup();
+  const login = await fetch(`${ctx.base}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: TOKEN }),
+  });
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  const response = await fetch(`${ctx.base}/api/schedules`, {
+    method: "POST",
+    headers: {
+      cookie,
+      "content-type": "application/json",
+      "sec-fetch-site": "same-origin",
+    },
+    body: JSON.stringify({
+      text: "x",
+      dueAt: Date.now() + 3_600_000,
+      target: { kind: "session", sessionID: "ses_test" },
+    }),
+  });
+  assert.equal(response.status, 201);
+  await ctx.close();
+});
+
+test("refuses to cancel a schedule that was already accepted", async () => {
+  const ctx = await setup();
+  const create = await fetch(`${ctx.base}/api/schedules`, {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({
+      text: "already sent",
+      dueAt: Date.now() + 3_600_000,
+      target: { kind: "session", sessionID: "ses_test" },
+    }),
+  });
+  const created = (await create.json()).data;
+  ctx.store.markAccepted(created.id, { sessionID: "ses_test", messageID: "msg_x" });
+  const cancel = await fetch(`${ctx.base}/api/schedules/${created.id}`, {
+    method: "DELETE",
+    headers: auth,
+  });
+  assert.equal(cancel.status, 409);
+  await ctx.close();
+});
+
+test("clamps invalid pagination instead of forwarding NaN", async () => {
+  const ctx = await setup();
+  const response = await fetch(`${ctx.base}/api/sessions?limit=not-a-number`, { headers: auth });
+  assert.equal(response.status, 200);
   await ctx.close();
 });
 

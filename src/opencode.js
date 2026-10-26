@@ -51,7 +51,7 @@ export class OpenCodeClient {
   async request(method, path, { body, query, timeoutMs = this.timeoutMs, signal, headers } = {}) {
     const url = this.url(path, query);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error("timeout")), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     try {
       const response = await fetch(url, {
@@ -86,8 +86,12 @@ export class OpenCodeClient {
       return data;
     } catch (error) {
       if (error instanceof OpenCodeError) throw error;
-      if (error?.name === "AbortError" || error?.name === "TimeoutError") {
-        throw new OpenCodeError(`Request timed out: ${method} ${path}`, { status: 0, path });
+      const timedOut = controller.signal.aborted && !signal?.aborted;
+      if (timedOut) {
+        throw new OpenCodeError(`Request timed out: ${method} ${path}`, { status: 408, path });
+      }
+      if (error?.name === "AbortError") {
+        throw new OpenCodeError(`Request aborted: ${method} ${path}`, { status: 0, path });
       }
       throw new OpenCodeError(`Cannot reach OpenCode at ${this.baseUrl}: ${error.message}`, {
         status: 0,
@@ -153,6 +157,17 @@ export class OpenCodeClient {
     return this.request("GET", `/api/session/${encodeURIComponent(sessionID)}/message`, {
       query: { limit, order, cursor, type },
     });
+  }
+
+  async getMessage(sessionID, messageID) {
+    return this.request(
+      "GET",
+      `/api/session/${encodeURIComponent(sessionID)}/message/${encodeURIComponent(messageID)}`,
+    );
+  }
+
+  async listInbox(sessionID) {
+    return this.request("GET", `/api/session/${encodeURIComponent(sessionID)}/inbox`);
   }
 
   async listProjects() {
@@ -223,6 +238,7 @@ export class OpenCodeClient {
         const { value, done } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
+        buffer = buffer.replace(/\r\n/g, "\n");
         let boundary = buffer.indexOf("\n\n");
         while (boundary !== -1) {
           const block = buffer.slice(0, boundary);

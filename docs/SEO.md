@@ -8,6 +8,10 @@ accurately.
 
 Repository and npm package: **`opencode-scheduled-messages`**.
 
+Landing page: `docs/index.html`, served at
+<https://eavebounty.github.io/opencode-scheduled-messages/>. It is a single file
+with no external assets and must keep a `repo_seo.py geo` score ≥90.
+
 Why:
 
 - exact phrase match for “opencode scheduled messages”;

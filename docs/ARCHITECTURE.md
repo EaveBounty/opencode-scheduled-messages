@@ -84,7 +84,7 @@ Indexes: `(state, due_at)`, `(state, not_before)`.
                  claim (attempt+1)
 pending ─────────────────────────────► sending
   ▲                                        │
-  │ retryLater (same idem id)              ├── prompt 200 + id match ──► accepted ──► done
+  │ retryLater (same idem id)              ├── prompt 200 + id match ──► accepted (sent)
   └────────────────────────────────────────┤
                                            ├── 4xx permanent ──────────► failed
                                            ├── grace expired ──────────► missed
@@ -96,12 +96,12 @@ pending / waiting / missed / failed ── cancel ──► cancelled
 
 Key rules:
 
-- **Attempts count sends, not waits.** `claimDue` increments `attempt` only when the previous state was `pending`. `releaseWaiting` decrements the claim's increment, so a busy loop does not exhaust retries.
+- **Attempts count sends, not waits.** `claimDue` increments `attempt` on every claim; `releaseWaiting` decrements it when the claim ends in a busy wait. A busy loop therefore does not exhaust send retries, and a send that follows a wait starts at `attempt = 1`.
 - **One claim at a time.** `BEGIN IMMEDIATE` + a single `SELECT ... LIMIT 1` + `UPDATE` guarantees no double processing, even if the HTTP handler and the interval fire together. `Scheduler.drain()` also has an in-process `busy` guard.
 - **Client-side idempotency.** The `msg_` id is generated once at schedule creation, stored, and reused on every retry. OpenCode returns the original inbox item for the same id. The code verifies both `data.id` and the echoed text; a mismatch fails loudly instead of accepting the wrong content.
-- **Grace before health.** A first pickup later than `due_at + grace_minutes` becomes `missed` without contacting OpenCode. This prevents a stale idea from firing after a long outage.
-- **Offline is not failure.** `status === 0` (network/timeout) keeps the row `pending` with a 60 s recheck and **does not consume an attempt**; after the grace window it becomes `missed`.
-- **Transient upstream errors** (`5xx`, `429`, `408`, `409`) retry at 30 s / 2 min / 10 min, then `failed`.
+- **Grace before health.** Any claim later than `due_at + grace_minutes` becomes `missed` without contacting OpenCode. This prevents a stale idea from firing after a long outage.
+- **Offline is not failure.** `status === 0` (network unreachable) keeps the row `pending` with a 60 s recheck and **does not consume an attempt**; after the grace window it becomes `missed`. Request timeouts are `408`: they retry normally and are reconciled against the inbox first.
+- **Transient upstream errors** (`5xx`, `429`) retry at 30 s / 2 min / 10 min, then `failed`. `408`/`409` first reconcile the stable `msg_` id against `/inbox` and `/message/:id`; only an unresolved conflict retries.
 - **Permanent errors** (400/401/403/404) go straight to `failed`.
 - **Manual resend** generates a fresh `msg_` id, because the old id may already have been accepted. The UI labels this as “重发”.
 
@@ -145,7 +145,7 @@ The browser endpoint adds `retry: 3000`, a 25 s comment heartbeat, and drops hig
 
 | Failure | Detected by | Result |
 |---|---|---|
-| Gateway restarts mid-send | `recover()` sees `sending` older than 120 s | `pending`; same id retried; `attempt >= 3` → `failed` |
+| Gateway restarts mid-send | startup `recover(staleAfterMs = 0)`, plus a 120 s sweep per tick | `pending`; same id retried; `attempt >= 3` → `failed` |
 | Gateway restarts while waiting | `wait_deadline < now` | `missed` |
 | OpenCode offline at T-0 | health check / fetch error | retry every 60 s inside grace; then `missed` |
 | OpenCode offline for hours | grace check on first pickup | `missed` without sending |
@@ -155,6 +155,8 @@ The browser endpoint adds `retry: 3000`, a 25 s comment heartbeat, and drops hig
 | Duplicate id with different text | response id/text check | fail loudly; never send the wrong text |
 | Browser offline | EventSource error | UI shows offline; poll fallback every 45 s |
 | Clock jumps | 10 s wall-clock tick | next tick re-evaluates `due_at` |
+
+`accepted` is the terminal **sent** state in 0.1; `done` is reserved for optional execution tracking. The UI groups `accepted` under **已发**.
 
 ## 10. Resource profile
 

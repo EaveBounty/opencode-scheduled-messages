@@ -23,7 +23,16 @@ Initial release.
 - Server-side Basic auth injection; access-token login; CSRF origin checks; CSP.
 - `ocsched doctor`, `ocsched service print|install`, systemd unit with memory caps.
 - DeepSeek peak/off-peak hint (official UTC windows).
-- 32 tests with a fake OpenCode client; no network or LLM calls.
+- 39 tests with a fake OpenCode client; no network or LLM calls.
+
+### Hardening
+
+- Reconcile `408`/`409` against the durable inbox before retrying; never blind-retry an ambiguous prompt.
+- Recover `sending` rows at startup and sweep stale sends every tick.
+- Resume permission watchdogs for accepted schedules after a restart.
+- Login rate limit counts failures only; successful logins no longer lock the IP out.
+- Static JS/CSS is `no-cache`; service worker uses network-first for the shell and refuses to cache error responses.
+- Mobile sheet survives live re-renders, traps focus, restores focus on close, and moves above the iOS keyboard.
 
 ### Known limitations
 

@@ -5,6 +5,7 @@ import { Store } from "../src/store.js";
 import { Scheduler } from "../src/scheduler.js";
 import { FakeClient } from "./fake-client.js";
 import { OpenCodeError } from "../src/opencode.js";
+import { sleep } from "../src/util.js";
 
 const T0 = 1_800_000_000_000;
 
@@ -179,6 +180,36 @@ test("steers into a running turn when configured", async () => {
   assert.equal(client.prompts[0].input.delivery, "steer");
 });
 
+test("reconciles a 409 against the durable inbox", async () => {
+  const client = new FakeClient({
+    inbox: [{ id: "msg_test", payload: { text: "hello" }, sessionID: "ses_1" }],
+  });
+  client.promptError = new OpenCodeError("conflict", { status: 409 });
+  const { store, scheduler, create } = setup({ client });
+  const row = create();
+  await scheduler.drain();
+  const updated = store.get(row.id);
+  assert.equal(updated.state, "accepted");
+  assert.equal(updated.result_message_id, "msg_test");
+});
+
+test("retries a timeout instead of treating it as offline", async () => {
+  const client = new FakeClient();
+  client.promptError = new OpenCodeError("timeout", { status: 408 });
+  const { clock, store, scheduler, create } = setup({ client });
+  const row = create();
+  await scheduler.drain();
+  const updated = store.get(row.id);
+  assert.equal(updated.state, "pending");
+  assert.equal(updated.attempt, 1);
+  assert.ok(updated.not_before >= clock.value + 30_000);
+
+  client.promptError = null;
+  clock.value += 31_000;
+  await scheduler.drain();
+  assert.equal(store.get(row.id).state, "accepted");
+});
+
 test("skips when busy and configured to skip", async () => {
   const client = new FakeClient({ active: { ses_1: { type: "running" } } });
   const { store, scheduler, create } = setup({ client });
@@ -186,4 +217,31 @@ test("skips when busy and configured to skip", async () => {
   await scheduler.drain();
   assert.equal(store.get(row.id).state, "missed");
   assert.equal(client.prompts.length, 0);
+});
+
+test("resumes permission watchdogs after a restart", async () => {
+  const client = new FakeClient({
+    permissions: [{ id: "perm_1", sessionID: "ses_1", action: "shell" }],
+  });
+  const { store, scheduler, create } = setup({ client });
+  const row = create({ permissionPolicy: "allow-all" });
+  store.markAccepted(row.id, { sessionID: "ses_1", messageID: "msg_test" });
+  scheduler.start();
+  await sleep(50);
+  scheduler.stop();
+  assert.equal(client.permissionReplies.length, 1);
+  assert.equal(client.permissionReplies[0].decision, "once");
+});
+
+test("read-only permission policy never approves shell", async () => {
+  const client = new FakeClient({
+    permissions: [{ id: "perm_1", sessionID: "ses_1", action: "shell" }],
+  });
+  const { store, scheduler, create } = setup({ client });
+  const row = create({ permissionPolicy: "allow-readonly" });
+  store.markAccepted(row.id, { sessionID: "ses_1", messageID: "msg_test" });
+  scheduler.start();
+  await sleep(50);
+  scheduler.stop();
+  assert.equal(client.permissionReplies.length, 0);
 });

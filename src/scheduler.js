@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { formatInZone, log, newMessageID } from "./util.js";
+import { formatInZone, log, newMessageID, sleep } from "./util.js";
 import { isRetryable, OpenCodeError } from "./opencode.js";
 import { scheduleView } from "./serialize.js";
 import { STATES } from "./store.js";
@@ -36,13 +36,23 @@ export class Scheduler {
   }
 
   start() {
-    const recovered = this.store.recover(this.now());
+    const recovered = this.store.recover(this.now(), { staleAfterMs: 0 });
     if (recovered.length) this.logger("info", "Recovered interrupted schedules", { recovered });
+    this.resumePermissionWatchers();
     this.timer = setInterval(() => {
       this.tick().catch((error) => this.logger("error", "Scheduler tick failed", { error: error.message }));
     }, this.tickMs);
     this.timer.unref?.();
     this.tick().catch((error) => this.logger("error", "Initial scheduler tick failed", { error: error.message }));
+  }
+
+  resumePermissionWatchers() {
+    for (const row of this.store.list({ states: ["accepted"], limit: 200 })) {
+      if (row.permission_policy === "wait") continue;
+      const sessionID = row.result_session_id || row.session_id;
+      if (!sessionID || this.watchers.has(row.id)) continue;
+      this.watchPermissions(row, sessionID, row.directory);
+    }
   }
 
   stop() {
@@ -56,8 +66,9 @@ export class Scheduler {
   async drain() {
     if (this.busy) return 0;
     this.busy = true;
-    let processed = 0;
     try {
+      this.store.recover(this.now(), { staleAfterMs: 120_000 });
+      let processed = 0;
       while (processed < 25) {
         const job = this.store.claimDue(this.now());
         if (!job) break;
@@ -90,19 +101,24 @@ export class Scheduler {
       }
 
       // First pickup after downtime: do not resurrect stale ideas hours later.
-      if (!job._wasWaiting && job.attempt <= 1) {
-        const lateBy = now - job.due_at;
-        if (lateBy > job.grace_minutes * 60_000) {
-          this.finish(runID, job, "missed", `Missed the ${job.grace_minutes} minute grace window`);
-          return this.store.markMissed(job.id, {
-            error: `Missed the ${job.grace_minutes} minute grace window`,
-            now,
-          });
-        }
+      if (!job._wasWaiting && now - job.due_at > job.grace_minutes * 60_000) {
+        this.finish(runID, job, "missed", `Missed the ${job.grace_minutes} minute grace window`);
+        return this.store.markMissed(job.id, {
+          error: `Missed the ${job.grace_minutes} minute grace window`,
+          now,
+        });
       }
 
       const health = await this.client.health();
-      if (!health.ok) throw new OpenCodeError(health.error || "OpenCode is offline", { status: 0 });
+      if (!health.ok) {
+        const status =
+          health.status === 401 || health.status === 403
+            ? health.status
+            : health.status === 408
+              ? 0
+              : health.status || 0;
+        throw new OpenCodeError(health.error || "OpenCode is offline", { status });
+      }
 
       if (!sessionID) {
         const created = unwrap(
@@ -154,7 +170,9 @@ export class Scheduler {
         if (job.busy_policy === "steer") {
           delivery = "steer";
         } else {
-          const deadline = job.wait_deadline || now + job.wait_minutes * 60_000;
+          const graceDeadline = job.due_at + job.grace_minutes * 60_000;
+          const deadline =
+            job.wait_deadline || Math.min(now + job.wait_minutes * 60_000, graceDeadline);
           if (now >= deadline) {
             this.finish(runID, job, "missed", "Session stayed busy past the wait deadline");
             return this.store.markMissed(job.id, {
@@ -211,9 +229,39 @@ export class Scheduler {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const retryable = isRetryable(error);
-      const offline = error instanceof OpenCodeError && error.status === 0;
       const attempt = job.attempt;
       const now = this.now();
+
+      // A 409 or a timeout may mean the upstream accepted the prompt but the
+      // response was lost. Reconcile against the durable inbox before retrying.
+      if (
+        sessionID &&
+        error instanceof OpenCodeError &&
+        (error.status === 409 || error.status === 408)
+      ) {
+        if (error.status === 408) await sleep(500);
+        const reconciled = await this.reconcile(job, sessionID);
+        if (reconciled) {
+          this.store.endRun(runID, {
+            status: "accepted",
+            httpStatus: 200,
+            response: reconciled,
+            now: this.now(),
+          });
+          const updated = this.store.markAccepted(job.id, {
+            sessionID,
+            messageID: reconciled.id || job.idem_msg_id,
+            now: this.now(),
+          });
+          this.emit("schedule.accepted", updated, { sessionID, reconciled: true });
+          if (job.permission_policy !== "wait") {
+            this.watchPermissions(job, sessionID, directory);
+          }
+          return updated;
+        }
+      }
+
+      const offline = error instanceof OpenCodeError && error.status === 0;
       const pastGrace = now - job.due_at > job.grace_minutes * 60_000;
 
       // OpenCode being offline is not a failed send. Keep the idea alive until
@@ -246,7 +294,9 @@ export class Scheduler {
         now,
       });
       if (retryable && attempt < this.maxAttempts) {
-        const delay = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
+        const delay =
+          RETRY_DELAYS[Math.min(Math.max(attempt - 1, 0), RETRY_DELAYS.length - 1)] ||
+          RETRY_DELAYS[0];
         this.logger("warn", "Schedule send failed; retrying", {
           id: job.id,
           attempt,
@@ -266,6 +316,30 @@ export class Scheduler {
       this.emit("schedule.failed", updated);
       return updated;
     }
+  }
+
+  /**
+   * After an ambiguous failure, look for the stable message id in the inbox or
+   * message history. Only the same text counts as success.
+   */
+  async reconcile(job, sessionID) {
+    try {
+      const inbox = unwrap(await this.client.listInbox(sessionID));
+      const items = Array.isArray(inbox?.data) ? inbox.data : Array.isArray(inbox) ? inbox : [];
+      const item = items.find((entry) => entry.id === job.idem_msg_id);
+      if (item && item.payload?.text === job.text) return item;
+    } catch (error) {
+      this.logger("warn", "Inbox reconciliation failed", { id: job.id, error: error.message });
+    }
+    try {
+      const message = unwrap(await this.client.getMessage(sessionID, job.idem_msg_id));
+      if (message && (message.text === job.text || message.payload?.text === job.text)) {
+        return message;
+      }
+    } catch {
+      // Not delivered yet, or the endpoint is unavailable on this version.
+    }
+    return null;
   }
 
   finish(runID, job, status, error) {
@@ -289,18 +363,23 @@ export class Scheduler {
   watchPermissions(job, sessionID, directory) {
     if (this.watchers.has(job.id)) return;
     const timeoutMs = job.permission_timeout_minutes * 60_000;
+    const stopAfter = timeoutMs + 60_000;
     const started = this.now();
     const firstSeen = new Map();
     const watcher = { timer: null, started };
     const tick = async () => {
-      if (this.now() - started > timeoutMs) {
+      if (this.now() - started > stopAfter) {
         clearInterval(watcher.timer);
         this.watchers.delete(job.id);
         return;
       }
       try {
-        const payload = unwrap(await this.client.listPermissions(directory)) || {};
-        const requests = Array.isArray(payload.data) ? payload.data : [];
+        const payload = await this.client.listPermissions(directory);
+        const requests = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.data)
+            ? payload.data
+            : [];
         for (const request of requests) {
           if (request.sessionID !== sessionID) continue;
           if (!firstSeen.has(request.id)) firstSeen.set(request.id, this.now());

@@ -1,3 +1,4 @@
+// Bump VERSION on every release that changes the shell.
 const VERSION = "ocsm-v1";
 const SHELL = [
   "/",
@@ -36,15 +37,29 @@ self.addEventListener("fetch", (event) => {
   // Never cache API traffic or event streams.
   if (url.pathname.startsWith("/api/")) return;
 
-  if (request.mode === "navigate") {
+  const networkFirst = new Set(["/", "/app.js", "/app.css", "/manifest.webmanifest"]);
+
+  if (request.mode === "navigate" || networkFirst.has(url.pathname)) {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(VERSION).then((cache) => cache.put("/", copy)).catch(() => {});
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(VERSION).then((cache) => cache.put(request, copy)).catch(() => {});
+          }
           return response;
         })
-        .catch(() => caches.match("/")),
+        .catch(() =>
+          caches.match(request).then(
+            (cached) =>
+              cached ||
+              caches.match("/") ||
+              new Response("Offline", {
+                status: 503,
+                headers: { "content-type": "text/plain; charset=utf-8" },
+              }),
+          ),
+        ),
     );
     return;
   }
@@ -60,7 +75,13 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => caches.match("/"));
+        .catch(
+          () =>
+            new Response("Offline", {
+              status: 503,
+              headers: { "content-type": "text/plain; charset=utf-8" },
+            }),
+        );
     }),
   );
 });

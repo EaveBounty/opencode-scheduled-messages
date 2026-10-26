@@ -1,4 +1,5 @@
 const app = document.getElementById("app");
+const sheetHost = document.getElementById("sheet-host");
 const toastEl = document.getElementById("toast");
 
 const state = {
@@ -12,6 +13,7 @@ const state = {
   projects: [],
   active: {},
   schedules: [],
+  permissions: [],
   stats: {},
   defaults: {},
   ui: {},
@@ -32,7 +34,9 @@ const state = {
   agents: null,
   toastTimer: null,
   countdownTimer: null,
-  focus: null,
+  permissionTimer: null,
+  focusReturn: null,
+  lastHello: false,
 };
 
 let deferredPrompt = null;
@@ -100,7 +104,10 @@ async function api(path, { method = "GET", body } = {}) {
   }
   if (response.status === 401) {
     state.authed = false;
-    renderLogin("登录已过期，请重新输入访问令牌");
+    if (!path.includes("/api/auth/login")) {
+      closeSheet();
+      renderLogin("登录已过期，请重新输入访问令牌");
+    }
     throw new Error("unauthorized");
   }
   if (!response.ok) {
@@ -215,6 +222,8 @@ function renderRich(text) {
 
 async function init() {
   renderBoot();
+  setupViewport();
+  registerServiceWorker();
   try {
     const status = await api("/api/auth/status");
     state.authed = Boolean(status.authenticated);
@@ -232,7 +241,6 @@ async function init() {
     hashBound = true;
   }
   route();
-  registerServiceWorker();
 }
 
 function renderBoot() {
@@ -278,6 +286,10 @@ async function loadAll() {
 function route() {
   if (!state.authed) return;
   clearInterval(state.countdownTimer);
+  clearInterval(state.permissionTimer);
+  state.permissionTimer = null;
+  state.permissions = [];
+  if (state.sheet) closeSheet();
   const hash = location.hash || "#/";
   const sessionMatch = hash.match(/^#\/s\/([^/]+)/);
   if (sessionMatch) {
@@ -305,12 +317,16 @@ async function openSession(id) {
       api(`/api/sessions/${encodeURIComponent(id)}/messages?limit=30&order=desc`),
       api(`/api/sessions/${encodeURIComponent(id)}/deep-link`).catch(() => null),
     ]);
+    if (state.sessionID !== id) return;
     state.session = unwrap(session);
     state.messages = (messages?.data || []).slice().reverse();
     state.deepLink = link?.url || null;
+    startPermissionPoll(id, state.session?.location?.directory);
   } catch (error) {
+    if (state.sessionID !== id) return;
     toast(error.message, "error");
   } finally {
+    if (state.sessionID !== id) return;
     state.loading = false;
     render();
     requestAnimationFrame(() => {
@@ -499,6 +515,17 @@ function renderSession() {
     })}
     <main class="content no-nav" id="messages">
       ${
+        state.permissions.length
+          ? `<div class="notice danger" style="margin-bottom:12px">
+              <strong>${state.permissions.length} 个权限请求等待处理</strong>
+              <div class="small" style="margin-top:4px;color:var(--muted)">
+                ${esc(state.permissions.map((request) => request.action).join(" / "))} — 定时任务会停在这里，不会自动批准。
+              </div>
+              ${state.deepLink ? `<a class="small" href="${esc(state.deepLink)}" target="_blank" rel="noopener noreferrer">在 OpenCode 原生界面处理 →</a>` : ""}
+            </div>`
+          : ""
+      }
+      ${
         state.loading
           ? `<div class="empty"><div class="meter"><span style="width:60%"></span></div><p style="margin-top:12px">读取消息…</p></div>`
           : messages.length === 0
@@ -564,8 +591,8 @@ function renderMessage(message) {
 
 function renderQueue() {
   const tabs = {
-    active: { label: "待发", states: ["pending", "waiting", "sending", "accepted"] },
-    done: { label: "已发", states: ["done"] },
+    active: { label: "待发", states: ["pending", "waiting", "sending"] },
+    done: { label: "已发", states: ["accepted", "done"] },
     issues: { label: "异常", states: ["failed", "missed"] },
     cancelled: { label: "已取消", states: ["cancelled"] },
   };
@@ -605,7 +632,8 @@ function renderQueue() {
 }
 
 function renderScheduleCard(item) {
-  const active = ["pending", "waiting", "sending", "accepted"].includes(item.state);
+  const active = ["pending", "waiting", "sending"].includes(item.state);
+  const canCancel = ["pending", "waiting"].includes(item.state);
   const issues = ["failed", "missed"].includes(item.state);
   const target =
     item.target.kind === "new"
@@ -627,7 +655,7 @@ function renderScheduleCard(item) {
         <span class="spacer"></span>
         ${item.resultSessionID ? `<a class="icon-btn" href="#/s/${esc(item.resultSessionID)}" aria-label="打开会话">${icon("link", 16)}</a>` : ""}
         ${canEdit ? `<button class="icon-btn" data-action="edit-schedule" data-id="${esc(item.id)}" aria-label="编辑">${icon("edit", 16)}</button>` : ""}
-        ${active || issues ? `<button class="icon-btn danger" data-action="cancel-schedule" data-id="${esc(item.id)}" aria-label="取消">${icon("trash", 16)}</button>` : ""}
+        ${canCancel ? `<button class="icon-btn danger" data-action="cancel-schedule" data-id="${esc(item.id)}" aria-label="取消">${icon("trash", 16)}</button>` : ""}
         ${issues ? `<button class="btn small primary" data-action="retry-schedule" data-id="${esc(item.id)}">重发</button>` : ""}
       </div>
       ${item.lastError ? `<div class="small" style="color:var(--red)">${esc(item.lastError)}</div>` : ""}
@@ -769,6 +797,7 @@ function openSheet(config = {}) {
   if (textarea && config.type !== "edit") state.composerText = textarea.value;
   const defaults = state.defaults || {};
   const known = config.sessionID ? state.sessions.find((session) => session.id === config.sessionID) : null;
+  state.focusReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   state.sheet = {
     type: config.type || "session",
     sessionID: config.sessionID || state.sessionID,
@@ -789,6 +818,29 @@ function openSheet(config = {}) {
   };
   if (state.sheet.type === "new" && !state.models) loadModelsAndAgents();
   render();
+  app.inert = true;
+  document.body.style.overflow = "hidden";
+  requestAnimationFrame(() => {
+    const field = document.getElementById("sheet-text");
+    field?.focus();
+    field?.setSelectionRange?.(field.value.length, field.value.length);
+  });
+}
+
+function syncSheetFromDOM() {
+  if (!state.sheet) return;
+  const value = (id) => document.getElementById(id)?.value;
+  if (document.getElementById("sheet-text")) state.sheet.text = value("sheet-text");
+  if (document.getElementById("sheet-due")) state.sheet.due = value("sheet-due");
+  if (document.getElementById("sheet-busy")) state.sheet.busyPolicy = value("sheet-busy");
+  if (document.getElementById("sheet-wait")) state.sheet.waitMinutes = Number(value("sheet-wait"));
+  if (document.getElementById("sheet-grace")) state.sheet.graceMinutes = Number(value("sheet-grace"));
+  if (document.getElementById("sheet-perm")) state.sheet.permissionPolicy = value("sheet-perm");
+  if (document.getElementById("sheet-perm-timeout")) state.sheet.permissionTimeoutMinutes = Number(value("sheet-perm-timeout"));
+  if (document.getElementById("sheet-directory")) state.sheet.directory = value("sheet-directory");
+  if (document.getElementById("sheet-new-title")) state.sheet.title = value("sheet-new-title");
+  if (document.getElementById("sheet-agent")) state.sheet.agent = value("sheet-agent");
+  if (document.getElementById("sheet-model")) state.sheet.model = value("sheet-model");
 }
 
 async function loadModelsAndAgents() {
@@ -796,20 +848,26 @@ async function loadModelsAndAgents() {
     const [models, agents] = await Promise.all([api("/api/models"), api("/api/agents")]);
     state.models = unwrap(models) || [];
     state.agents = unwrap(agents) || [];
-    renderSheet();
+    syncSheetFromDOM();
+    renderSheet(true);
   } catch {
     // Optional; the sheet still works without them.
   }
 }
 
-function renderSheet() {
+function renderSheet(force = false) {
   if (!state.sheet) return;
   const sheet = state.sheet;
   const existing = document.getElementById("sheet-root");
-  if (existing) existing.remove();
+  if (existing) {
+    if (!force) return;
+    existing.remove();
+  }
 
   if (sheet.type === "new" && state.models && !sheet.model) {
-    const first = state.models.find((model) => model.enabled && model.status === "active");
+    const available = state.models.filter((model) => model.enabled && model.status === "active");
+    const preferred = available.find((model) => /deepseek/i.test(model.id || model.modelID || ""));
+    const first = preferred || available[0];
     if (first) sheet.model = `${first.providerID}/${first.id}`;
   }
 
@@ -947,7 +1005,7 @@ function renderSheet() {
         到点后若 OpenCode 离线，会在宽限时间内重试；超过宽限标记“已错过”。
       </div>
     </div>`;
-  app.appendChild(root);
+  sheetHost.appendChild(root);
   updatePeakHint();
 }
 
@@ -970,9 +1028,24 @@ function updatePeakHint() {
 }
 
 function closeSheet() {
+  if (!state.sheet) return;
   state.sheet = null;
   const root = document.getElementById("sheet-root");
   if (root) root.remove();
+  app.inert = false;
+  app.removeAttribute("inert");
+  document.body.style.overflow = "";
+  const target = state.focusReturn;
+  state.focusReturn = null;
+  if (target && document.contains(target)) {
+    target.focus?.();
+  } else {
+    const fallback =
+      document.getElementById("composer-text") ||
+      document.querySelector('[data-action="open-sheet"]') ||
+      document.getElementById("search");
+    fallback?.focus?.();
+  }
 }
 
 async function submitSheet() {
@@ -1062,41 +1135,73 @@ async function refreshSchedules() {
 // ---------------------------------------------------------------- actions
 
 async function sendNow() {
+  const id = state.sessionID;
   const text = (document.getElementById("composer-text")?.value || state.composerText || "").trim();
-  if (!text || state.composerBusy) return;
+  if (!id || !text || state.composerBusy) return;
   state.composerBusy = true;
   state.composerText = text;
   renderSession();
   try {
-    await api(`/api/sessions/${encodeURIComponent(state.sessionID)}/send`, {
+    await api(`/api/sessions/${encodeURIComponent(id)}/send`, {
       method: "POST",
       body: { text },
     });
-    state.composerText = "";
-    toast("已发送");
-    await refreshSession();
+    if (state.sessionID === id) {
+      state.composerText = "";
+      toast("已发送");
+      await refreshSession();
+    }
   } catch (error) {
-    toast(error.message, "error");
+    if (state.sessionID === id) toast(error.message, "error");
   } finally {
     state.composerBusy = false;
-    renderSession();
+    if (state.sessionID === id) renderSession();
   }
 }
 
 async function refreshSession() {
-  if (!state.sessionID) return;
+  const id = state.sessionID;
+  if (!id) return;
   try {
     const [session, messages, link] = await Promise.all([
-      api(`/api/sessions/${encodeURIComponent(state.sessionID)}`),
-      api(`/api/sessions/${encodeURIComponent(state.sessionID)}/messages?limit=30&order=desc`),
-      api(`/api/sessions/${encodeURIComponent(state.sessionID)}/deep-link`).catch(() => null),
+      api(`/api/sessions/${encodeURIComponent(id)}`),
+      api(`/api/sessions/${encodeURIComponent(id)}/messages?limit=30&order=desc`),
+      api(`/api/sessions/${encodeURIComponent(id)}/deep-link`).catch(() => null),
     ]);
+    if (state.sessionID !== id) return;
     state.session = unwrap(session);
     state.messages = (messages?.data || []).slice().reverse();
     state.deepLink = link?.url || state.deepLink;
     renderSession();
+    loadPermissions(id, state.session?.location?.directory);
   } catch (error) {
-    toast(error.message, "error");
+    if (state.sessionID === id) toast(error.message, "error");
+  }
+}
+
+function startPermissionPoll(id, directory) {
+  clearInterval(state.permissionTimer);
+  const load = () => loadPermissions(id, directory);
+  load();
+  state.permissionTimer = setInterval(load, 10_000);
+}
+
+async function loadPermissions(id, directory) {
+  try {
+    const data = await api(
+      `/api/permissions${directory ? `?directory=${encodeURIComponent(directory)}` : ""}`,
+    );
+    const list = Array.isArray(data) ? data : data?.data || [];
+    if (state.sessionID !== id) return;
+    const next = list.filter((request) => request.sessionID === id);
+    const changed =
+      next.length !== state.permissions.length ||
+      next.some((request, index) => request.id !== state.permissions[index]?.id);
+    if (!changed) return;
+    state.permissions = next;
+    if (state.view === "session") renderSession();
+  } catch {
+    // Permission visibility is best-effort; the native UI remains authoritative.
   }
 }
 
@@ -1165,6 +1270,13 @@ async function handleEvent(event) {
   if (event.type === "hello") {
     state.stats = event.stats || state.stats;
     state.upstreamConnected = Boolean(event.upstream?.connected);
+    if (state.lastHello) {
+      refreshSchedules().then(() => {
+        if (state.view === "queue") renderQueue();
+        if (state.view === "sessions") updateSessionList();
+      });
+    }
+    state.lastHello = true;
     return;
   }
   if (event.type === "upstream.connected") {
@@ -1251,6 +1363,7 @@ function autoResize() {
 // ---------------------------------------------------------------- login
 
 function renderLogin(error = "") {
+  if (state.sheet) closeSheet();
   app.innerHTML = `
     <div class="login">
       <div class="login-card">
@@ -1273,7 +1386,6 @@ function renderLogin(error = "") {
 }
 
 async function login(token) {
-  const error = document.getElementById("login-error");
   try {
     await api("/api/auth/login", { method: "POST", body: { token } });
     state.authed = true;
@@ -1284,10 +1396,23 @@ async function login(token) {
       hashBound = true;
     }
     route();
-    registerServiceWorker();
   } catch (err) {
+    const error = document.getElementById("login-error");
     if (error) error.textContent = err.message === "unauthorized" ? "令牌不正确" : err.message;
   }
+}
+
+function setupViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const update = () => {
+    const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    document.documentElement.style.setProperty("--keyboard-offset", `${Math.round(offset)}px`);
+  };
+  vv.addEventListener("resize", update);
+  vv.addEventListener("scroll", update);
+  window.addEventListener("resize", update);
+  update();
 }
 
 function registerServiceWorker() {
@@ -1384,6 +1509,7 @@ app.addEventListener("click", (event) => {
   }
   if (action === "logout") {
     api("/api/auth/logout", { method: "POST" }).finally(() => {
+      closeSheet();
       state.authed = false;
       state.eventSource?.close();
       renderLogin();
@@ -1404,6 +1530,22 @@ app.addEventListener("click", (event) => {
 });
 
 app.addEventListener("input", (event) => {
+  if (state.sheet && event.target.closest?.("#sheet-root")) {
+    if (event.target.id === "sheet-text") state.sheet.text = event.target.value;
+    if (event.target.id === "sheet-due") {
+      state.sheet.due = event.target.value;
+      updatePeakHint();
+    }
+    if (event.target.id === "sheet-busy") state.sheet.busyPolicy = event.target.value;
+    if (event.target.id === "sheet-wait") state.sheet.waitMinutes = Number(event.target.value);
+    if (event.target.id === "sheet-grace") state.sheet.graceMinutes = Number(event.target.value);
+    if (event.target.id === "sheet-perm") state.sheet.permissionPolicy = event.target.value;
+    if (event.target.id === "sheet-perm-timeout") state.sheet.permissionTimeoutMinutes = Number(event.target.value);
+    if (event.target.id === "sheet-directory") state.sheet.directory = event.target.value;
+    if (event.target.id === "sheet-new-title") state.sheet.title = event.target.value;
+    if (event.target.id === "sheet-agent") state.sheet.agent = event.target.value;
+    if (event.target.id === "sheet-model") state.sheet.model = event.target.value;
+  }
   if (event.target.id === "search") {
     state.filters.search = event.target.value;
     updateSessionList();
@@ -1423,7 +1565,6 @@ app.addEventListener("input", (event) => {
     }
     void label;
   }
-  if (event.target.id === "sheet-due") updatePeakHint();
 });
 
 app.addEventListener("change", (event) => {
@@ -1468,17 +1609,44 @@ app.addEventListener("submit", (event) => {
 });
 
 app.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && state.sheet) {
-    closeSheet();
-    return;
-  }
   if (event.target.id === "composer-text" && (event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
     sendNow();
   }
-  if (event.key === "Enter" && event.target.closest?.('[role="button"]')) {
-    const card = event.target.closest('[data-action="open-session"]');
-    if (card) location.hash = `#/s/${encodeURIComponent(card.dataset.id)}`;
+  if (
+    (event.key === "Enter" || event.key === " ") &&
+    event.target.matches?.('[data-action="open-session"]')
+  ) {
+    event.preventDefault();
+    location.hash = `#/s/${encodeURIComponent(event.target.dataset.id)}`;
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (!state.sheet) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeSheet();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const root = document.getElementById("sheet-root");
+  if (!root) return;
+  const focusables = [
+    ...root.querySelectorAll(
+      'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ].filter((element) => element.offsetParent !== null);
+  if (focusables.length === 0) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const inside = root.contains(document.activeElement);
+  if (event.shiftKey && (!inside || document.activeElement === first)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (!inside || document.activeElement === last)) {
+    event.preventDefault();
+    first.focus();
   }
 });
 
