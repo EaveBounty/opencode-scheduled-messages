@@ -74,7 +74,7 @@ Then set **Settings → OpenCode native URL** to `https://opencode.example.com`.
 
 Security:
 
-- Put **Cloudflare Access** in front of both hostnames. The gateway has a single access token, not multi-user accounts.
+- Put **Cloudflare Access** in front of both hostnames. The gateway has a single login password, not multi-user accounts.
 - Do not enable a public tunnel without Access; the API can send prompts into your coding sessions.
 - SSE works through Cloudflare, but keep proxy buffering off if you add nginx in front.
 

@@ -1,127 +1,104 @@
 # opencode-scheduled-messages
 
-**Schedule a message into an existing OpenCode V2 session — write at peak, send off-peak.**
+**给 OpenCode V2 的指定会话定时发消息：白天写，低峰发。**
 
-[Website](https://eavebounty.github.io/opencode-scheduled-messages/) · [npm](https://www.npmjs.com/package/opencode-scheduled-messages) · [Architecture](docs/ARCHITECTURE.md) · [Deploy](docs/DEPLOY.md)
+[![中文](https://img.shields.io/badge/README-中文-2f4ce0)](README.md) [![English](https://img.shields.io/badge/README-English-6b7488)](README.en.md)
 
-[![CI](https://github.com/EaveBounty/opencode-scheduled-messages/actions/workflows/ci.yml/badge.svg)](https://github.com/EaveBounty/opencode-scheduled-messages/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/opencode-scheduled-messages.svg)](https://www.npmjs.com/package/opencode-scheduled-messages)
-[![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
-[![node](https://img.shields.io/badge/node-%3E%3D22.6-339933.svg)](https://nodejs.org)
+[项目主页](https://eavebounty.github.io/opencode-scheduled-messages/) · [PolyForm Noncommercial 1.0.0](LICENSE)
 
-OpenCode V2 is excellent at keeping a thread, but it has no scheduler. Existing tools create a **new** session for every job, so the idea loses the context you were actually thinking in. This project does the opposite: it queues a message for **a specific existing session** (or a new one), and sends it later through the official V2 HTTP API.
+OpenCode V2 有完整的 HTTP API，但没有 cron 或延时发送。现有工具大多在每次任务时**新建会话**，想法就丢了原来的上下文。这个项目反过来：把一句话排队到**你指定的已有会话**（也可以新建），到点通过官方 V2 API 发进去。
 
-It is a single zero-dependency Node process, a mobile-first PWA, and a SQLite queue. No fork of OpenCode, no browser automation, no injected scripts, no 900 MB database reads.
+单进程、零运行时依赖、移动优先 PWA、SQLite 队列。不改 OpenCode、不注入它的页面、不读它 900 MB 的数据库。
 
 ```
-┌─────────────┐   HTTPS/Tailscale   ┌──────────────────────────┐
-│ phone / PC  │ ──────────────────► │ ocsched :8788            │
-│  PWA        │                     │  ├─ /          our PWA   │
-└─────────────┘                     │  ├─ /api/*     gateway   │
-                                    │  └─ scheduler + SQLite   │
-                                    └────────────┬─────────────┘
-                                                 │ Basic auth (server-side)
-                                                 ▼
-                                    ┌──────────────────────────┐
-                                    │ OpenCode V2 :4096        │
-                                    │  native web UI + API     │
-                                    └──────────────────────────┘
+手机 / 电脑  ──HTTPS/Tailscale──►  ocsched :8788
+                                   ├─ /        自己的 PWA
+                                   ├─ /api/*   网关（服务端注入 Basic 认证）
+                                   └─ 调度器 + SQLite
+                                          │
+                                          ▼
+                                   OpenCode V2 :4096
 ```
 
----
+## 为什么做这个
 
-## Why this exists
+- **续写已有会话，而不是每次开新会话。** 核心 API 是 `POST /api/session/{id}/prompt`。
+- **持久化。** SQLite + 10 秒 tick；重启后按宽限窗口补发，不会静默丢任务。
+- **失败可见。** 会话忙就等；OpenCode 离线就重试；超过宽限标记“已错过”，不把半夜的想法中午突然发出去。
+- **手机优先。** ~80 KB 级 PWA、底部输入框、安全区适配、可安装。
+- **完整视图不重造。** 一键跳到 OpenCode 原生会话页（深链），保留全部工具输出、diff、图片。
+- **零依赖。** `node:http` + `node:sqlite` + 原生 `fetch`，`npm pack` 约 150 KB。
 
-OpenCode V2 exposes a first-class HTTP API (`POST /api/session/{id}/prompt`), but no cron or delayed-send primitive. A naive `setTimeout` in a browser tab dies when the phone sleeps. A plugin cannot register HTTP routes or persist a timer across restarts. Wrapping `opencode run` loses the existing thread and the UI.
-
-`opencode-scheduled-messages` is the small missing layer:
-
-- **Existing session, not a new one.** The prompt is appended to the session you choose.
-- **Durable.** SQLite + a single 10-second tick; survives restarts and catches up inside a grace window.
-- **Honest about failure.** Busy sessions wait, offline servers retry, stale ideas become `missed` instead of silently firing at noon.
-- **Phone-first.** A ~80 KB PWA, bottom composer, safe-area support, installable over HTTPS.
-- **Full-fidelity view when you need it.** One tap opens OpenCode's own native session UI through a deep link.
-- **Zero runtime dependencies.** `node:http`, `node:sqlite`, native `fetch`. `npm pack` is ~150 KB.
-
-## Features
+## 功能
 
 | | |
 |---|---|
-| **Session browser** | Lists root sessions from every project, shows running/idle, model, last activity, cost and tokens. |
-| **Existing-session send** | `POST /api/session/{id}/prompt` with a client-generated `msg_` id for idempotency. |
-| **New-session send** | Creates a session with title, directory, model and agent, then sends the message. |
-| **One-shot scheduling** | Absolute UTC time + original IANA timezone; the phone's timezone is used at creation. |
-| **Busy policy** | Wait up to 30 minutes for idle (default), steer into the current turn, or skip. |
-| **Grace window** | If the machine was off, send only within 120 minutes; otherwise mark `missed` for manual resend. |
-| **Permission policy** | Per schedule: wait for you (default), auto-reject on timeout, auto-approve read-only tools, or explicitly allow all. |
-| **Live updates** | SSE fan-out from OpenCode; scheduler events are pushed to every browser. |
-| **Mobile PWA** | Manifest, service worker, dark/light tokens, 44 px targets, iOS safe areas, install prompt. |
-| **LAN / Tailscale / Cloudflare** | Loopback by default, `--lan` for a phone on the same Wi-Fi, or put any HTTPS reverse proxy in front. |
-| **DeepSeek peak hint** | Shows whether the chosen time is DeepSeek peak or off-peak (official UTC windows). |
+| 会话列表 | 跨项目列出根会话，显示运行/空闲、模型、最后活动、成本与 token |
+| 已有会话发送 | 客户端生成 `msg_` id，服务端幂等 |
+| 新建会话发送 | 可指定标题、目录、模型、agent，再发送 |
+| 一次性定时 | 存绝对 UTC + 原始 IANA 时区；手机端按本地时区选择 |
+| 忙闲策略 | 等空闲（默认 30 分钟）/ 插入当前轮 / 跳过 |
+| 宽限窗口 | 机器关机后 120 分钟内才补发，超时转人工 |
+| 权限策略 | 每条任务单独设置：等我处理（默认）/ 超时拒绝 / 只读自动放行 / 全部放行 |
+| 实时更新 | 复用 OpenCode SSE，调度事件推送到所有页面 |
+| 移动端 | Manifest、Service Worker、深/浅色、44px 触控、iOS 安全区 |
+| 局域网 / Tailscale / Cloudflare | 默认只绑 127.0.0.1；`--lan` 给同 Wi-Fi 手机；任意 HTTPS 反代均可 |
+| DeepSeek 峰谷提示 | 按官方 UTC 时段显示“峰时/谷时”，不承诺省钱 |
 
-## Quick start
+## 快速开始
 
-Requirements: **Node.js ≥ 22.6** and a running **OpenCode V2** server.
+要求：**Node.js ≥ 22.6**，以及正在运行的 **OpenCode V2**。
 
 ```bash
-# 1. Start OpenCode's server if it is not already running.
-opencode serve --service          # usually already active as opencode.service
+# 1. 确认 OpenCode 服务在跑
+opencode serve --service        # 通常已由 opencode.service 托管
 
-# 2. Start the scheduler.
+# 2. 启动调度器
 npx opencode-scheduled-messages
 
-# Or install it globally:
+# 或全局安装
 npm install -g opencode-scheduled-messages
 ocsched
 ```
 
-On first run it prints a one-time access token:
+首次启动会打印一次性**初始密码**：
 
 ```
 ────────────────────────────────────────────────────────────────
-  Access token (shown once; store it now)
-  Xq3...your-token...
+  Initial password (shown once; change it after login)
+  Xq3...initial-password...
   Config: ~/.config/opencode-scheduled-messages/config.json
-  Lost it? Run with --rotate-token to issue a new one.
+  Lost it? Run with --rotate-token to issue a new one (then restart the service).
 ────────────────────────────────────────────────────────────────
 ```
 
-Open <http://127.0.0.1:8788>, paste the token, pick a session, write a sentence, choose **今晚 23:30**, and submit. At 23:30 the message is appended to that session.
+打开 <http://127.0.0.1:8788>，用初始密码登录，选会话，写一句话，选“今晚 23:30”，提交。到点消息会追加到该会话。登录后在「设置 → 修改密码」改成你自己的密码。
 
-### Phone on the same Wi-Fi
+> 如果是 agent 替你部署，它应当私下把初始密码转告你，并提醒你登录后修改。
+
+### 手机（同一 Wi-Fi）
 
 ```bash
 ocsched --lan
-# Local     http://127.0.0.1:8788
-# LAN       http://192.168.x.x:8788
+# LAN  http://192.168.x.x:8788
 ```
 
-Open the LAN URL on the phone. HTTP works, but service workers and PWA installation need a secure context — use one of the HTTPS options below.
+HTTP 能用，但 Service Worker / 安装到主屏需要 HTTPS。
 
-### Tailscale (recommended for daily use)
+### Tailscale（推荐）
 
 ```bash
-# Gateway PWA on 443
-tailscale serve --bg --https=443 http://127.0.0.1:8788
-
-# OpenCode's native UI on 8443 (for one-tap full-session links and its own PWA)
+tailscale serve --bg --https=443  http://127.0.0.1:8788
 tailscale serve --bg --https=8443 http://127.0.0.1:4096
 ```
 
-Then in **Settings → OpenCode native URL**, set `https://<host>.<tailnet>.ts.net:8443`. Now the PWA is installable on iOS/Android, and **Open full session** opens the real OpenCode UI, not a clone.
+然后在 **设置 → OpenCode 原生界面地址** 填 `https://<host>.<tailnet>.ts.net:8443`。PWA 可安装，“完整会话”会打开真正的 OpenCode UI。
 
 ### Cloudflare Tunnel / nginx
 
-Any reverse proxy works. Expose two hostnames (or two ports):
+两个域名分别指向 `8788`（本应用）和 `4096`（OpenCode 原生 UI），在设置里填第二个。记得关闭代理缓冲（nginx：`proxy_buffering off;`），否则 SSE 会被攒住。
 
-- `https://schedule.example.com` → `127.0.0.1:8788`
-- `https://opencode.example.com` → `127.0.0.1:4096`
-
-Set **Settings → OpenCode native URL** to the second one. Put Cloudflare Access or your own auth in front; this app is single-user and does not implement multi-tenant auth.
-
-> SSE needs proxy buffering off. For nginx: `proxy_buffering off; proxy_read_timeout 3600s;`.
-
-### systemd (survive reboot)
+### systemd
 
 ```bash
 ocsched service print > ~/.config/systemd/user/ocsched.service
@@ -130,86 +107,79 @@ systemctl --user enable --now ocsched
 journalctl --user -u ocsched -f
 ```
 
-The generated unit binds to `127.0.0.1` by default and caps memory (`MemoryHigh=192M`, `MemoryMax=320M`) so it can never compete with OpenCode for the whole machine.
+生成的 unit 默认绑 `127.0.0.1`，并限制 `MemoryHigh=192M / MemoryMax=320M`，避免和 OpenCode 抢整机内存。
 
-## How it works
+## 工作方式
 
-1. The gateway reads the OpenCode password from `~/.config/opencode/service.json` (or `OPENCODE_PASSWORD`) and injects Basic auth **server-side**. The browser never receives it.
-2. The PWA lists sessions through the gateway. Choosing one stores `{sessionID, text, dueAt, timezone, policies}` in SQLite.
-3. A 10-second tick claims the next due row with an atomic `UPDATE ... WHERE state = 'pending'`.
-4. At T-0 the scheduler checks OpenCode health, target session existence and active state, then calls `POST /api/session/{id}/prompt` with a stable `msg_` id.
-5. The same id is reused on retries. OpenCode returns the original message for a duplicate id, so a retry cannot send the sentence twice.
-6. The UI receives `schedule.accepted` / `schedule.failed` over SSE.
+1. 网关从 `~/.config/opencode/service.json`（或 `OPENCODE_PASSWORD`）读取密码，**在服务端**注入 Basic 认证，浏览器永远拿不到。
+2. PWA 通过网关列会话。选一个会话后，把 `{sessionID, text, dueAt, timezone, policies}` 写进 SQLite。
+3. 10 秒 tick 用原子 `UPDATE ... WHERE state='pending'` 领取到期任务。
+4. 到点先检查 OpenCode 健康、会话存在、是否运行，再 `POST /api/session/{id}/prompt`，带稳定的 `msg_` id。
+5. 重试复用同一个 id。OpenCode 对重复 id 返回原消息，不会发两遍。
+6. 结果通过 SSE 推回页面（`schedule.accepted` / `schedule.failed`）。
 
-Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
-### State machine
+### 状态机
 
 ```
-pending ──► sending ──► accepted (sent)
-                                  └── done (reserved)
+pending ──► sending ──► accepted（已发送）
+                                  └── done（预留）
    │           │
-   │           ├──► pending   (transient error, same msg id)
-   │           ├──► missed    (grace expired / stayed busy)
-   │           └──► failed    (permanent 4xx)
-   ├──► waiting ──► sending   (session was busy)
+   │           ├──► pending   （临时错误，同 msg id 重试）
+   │           ├──► missed    （超宽限 / 一直忙）
+   │           └──► failed    （永久 4xx）
+   ├──► waiting ──► sending   （会话当时在忙）
    └──► cancelled
 ```
 
-### Idempotency and “did it actually send?”
+`200 OK` 只代表 OpenCode 接受进 inbox，不代表模型跑完；UI 标为“已发送”（0.1 的终态）。真正的执行过程看原生会话或 SSE。OpenCode 离线时什么也没发，重试安全；若请求超时但服务端已接受，复用同一 id 会拿回原消息，不会重复。
 
-`200 OK` means OpenCode accepted the prompt into its inbox, not that the model finished. The UI labels that as **已发送 / accepted** (terminal in 0.1). Execution progress is visible in the native session or through live SSE events. If OpenCode was offline, nothing was sent and the retry is safe. If a request times out after the server accepted it, reusing the same `msg_` id returns the original message instead of duplicating it.
+## DeepSeek 峰谷：先讲清楚
 
-## DeepSeek peak / off-peak
+DeepSeek 官方按量 API 在**谷时半价**。峰时是 **UTC 01:00–04:00 与 06:00–10:00，周一至周五**（不含中国法定节假日）；换成北京时间是**工作日 09:00–12:00、14:00–18:00**，其余时段、午休、周末、节假日都是谷时。
 
-DeepSeek's official API applies **half price during off-peak hours**. Peak hours are **01:00–04:00 and 06:00–10:00 UTC, Monday–Friday**, excluding Chinese public holidays. In Beijing time that is **09:00–12:00 and 14:00–18:00 on weekdays**; evenings, lunch, weekends and holidays are off-peak.
+来源：<https://api-docs.deepseek.com/quick_start/pricing>
 
-Source: <https://api-docs.deepseek.com/quick_start/pricing>
+如果你用 **opencode-go** 订阅：月费不变，但额度按月美元金额计算，而 DeepSeek 峰时单价正好是谷时的 2 倍。所以谷时发送只消耗**一半额度**——经常撞 5 小时/周限额时等于可用量翻倍；从不撞限额时，收益是 0。UI 写的是“谷时 · 半额消耗”，不是“省一半钱”。
 
-If you use **opencode-go**, you pay a subscription rather than per token, but its monthly allowance is denominated in dollars and DeepSeek's peak token price is exactly twice the off-peak price. Sending at off-peak therefore consumes **half the allowance** for the same tokens — useful when you hit the 5-hour/weekly caps, but it does not reduce the monthly subscription price. The UI says **“谷时 · 半额消耗”**, not “save 50%”, because that distinction matters.
+## 对比
 
-## Comparison
-
-| | **this project** | opencode-scheduler | opencode-manager |
+| | **本项目** | opencode-scheduler | opencode-manager |
 |---|---|---|---|
-| Append to an **existing** session | ✅ | ❌ (new session per run) | ❌ (new session per run) |
-| Durable queue + missed-run policy | ✅ SQLite + grace window | ⚠️ OS scheduler; no retry in practice | ⚠️ DB jobs; cron mode has no catch-up |
-| Mobile UI | ✅ PWA + native deep link | ❌ | ✅ web |
-| Runtime footprint | ~100 MB RSS, 0 deps, ~150 KB package | plugin + OS timers | Bun + React + Docker, ≥1.5 GB image |
-| Permission control for unattended sends | ✅ per schedule | ⚠️ denies questions | ❌ |
-| Works without systemd | ✅ | ✅ (cron/launchd) | ✅ (Docker) |
+| 追加到**已有**会话 | ✅ | ❌（每次新会话） | ❌（每次新会话） |
+| 持久队列 + 错过策略 | ✅ SQLite + 宽限 | ⚠️ 依赖 OS 调度，实际无重试 | ⚠️ DB job，cron 模式不补跑 |
+| 移动端 UI | ✅ PWA + 原生深链 | ❌ | ✅ Web |
+| 资源占用 | ~100 MB RSS，0 依赖，~150 KB 包 | 插件 + OS 定时器 | Bun + React + Docker，≥1.5 GB 镜像 |
+| 无人值守权限控制 | ✅ 每条任务可配 | ⚠️ 直接拒绝 question | ❌ |
 
-The point is not “more features”. It is the specific missing primitive: **a delayed prompt into a thread that already exists**.
+差异点不是“功能更多”，而是补上缺失的原语：**向已存在的线程延时追加一句话**。
 
-## Security model
+## 安全模型
 
-- Binds `127.0.0.1` by default. `--lan` is an explicit opt-in.
-- Access token is printed once, stored as a SHA-256 hash; the browser gets a signed `HttpOnly; SameSite=Strict` cookie.
-- Writes require a matching `Origin`; login is rate-limited.
-- The OpenCode password stays in the gateway process. It is never serialized into HTML or sent to the browser.
-- CSP is `default-src 'self'` with no inline scripts; all user text is escaped before rendering.
-- Config and DB are written with `0600`, and the DB lives in `~/.local/share/`, never `/tmp`.
-- Unattended permission requests default to **wait**, not auto-approve. Auto-approving shell/edit is opt-in per schedule and clearly labelled dangerous.
+- 默认只绑 `127.0.0.1`；`--lan` 是显式动作。
+- 初始密码只打印一次；配置里存 scrypt 哈希（兼容旧 token 的 SHA-256）；浏览器拿签名 `HttpOnly; SameSite=Strict` cookie。
+- 写操作校验 `Origin`；登录限速。
+- OpenCode 密码只存在于网关进程，不写 HTML、不下发浏览器。
+- CSP `default-src 'self'`，无内联脚本；所有消息文本先转义。
+- 配置与数据库 `0600`，数据库放 `~/.local/share/`，不放 `/tmp`。
+- 无人值守权限默认**等待**，不自动批准 shell/edit；自动放行需每条任务显式选择并标红警告。
 
-See [`SECURITY.md`](SECURITY.md).
+详见 [`SECURITY.md`](SECURITY.md)。
 
-## Configuration
+## 配置
 
-| Variable | Default | Meaning |
+| 环境变量 | 默认 | 说明 |
 |---|---|---|
-| `OPENCODE_BASE_URL` | from `service.json` | OpenCode HTTP API, e.g. `http://127.0.0.1:4096` |
-| `OPENCODE_PASSWORD` | from `service.json` | Basic auth password; prefer the file |
-| `OCSM_TOKEN` | generated | Fixed access token (containers/tests) |
-| `OCSM_CONFIG_DIR` | `~/.config/opencode-scheduled-messages` | Config directory |
-| `OCSM_DATA_DIR` | `~/.local/share/opencode-scheduled-messages` | SQLite directory |
+| `OPENCODE_BASE_URL` | 从 `service.json` 推导 | OpenCode HTTP API |
+| `OPENCODE_PASSWORD` | 从 `service.json` 读取 | Basic 密码；优先用文件 |
+| `OCSM_TOKEN` | 自动生成 | 固定登录密码（容器/测试，直接作为密码） |
+| `OCSM_CONFIG_DIR` | `~/.config/opencode-scheduled-messages` | 配置目录 |
+| `OCSM_DATA_DIR` | `~/.local/share/opencode-scheduled-messages` | SQLite 目录 |
 
-CLI flags: `--port`, `--bind`, `--lan`, `--public-url`, `--opencode-url`, `--opencode-public-url`, `--rotate-token`, `--log-level`.
+CLI：`--port`、`--bind`、`--lan`、`--public-url`、`--opencode-url`、`--opencode-public-url`、`--rotate-token`、`--log-level`。
 
-`--rotate-token` rotates the token and exits; restart the service (`systemctl --user restart ocsched`) to apply it. Rotating also invalidates existing browser sessions.
+`--rotate-token` 只轮换初始密码并退出；需要 `systemctl --user restart ocsched` 才会生效。轮换会同时使现有浏览器会话失效。
 
 ## API
-
-The gateway exposes a small same-origin API for the PWA:
 
 ```
 GET    /api/sessions
@@ -225,67 +195,57 @@ POST   /api/schedules/:id/retry
 GET    /api/events            (SSE)
 ```
 
-See [`docs/API.md`](docs/API.md) for bodies and examples.
+详见 [`docs/API.md`](docs/API.md)。
 
 ## FAQ
 
-### Does OpenCode support scheduled messages or cron?
+### OpenCode 支持定时消息 / cron 吗？
 
-Not natively in V2.1. It has a durable inbox (`delivery: queue`) but no timer: a queued item does not wake itself. This project supplies the timer and persists it outside the OpenCode process.
+V2.1 原生不支持。它有 durable inbox（`delivery: queue`），但没有定时器：队列项不会自己醒。这个项目补的就是定时器，并把它放在 OpenCode 进程之外持久化。
 
-### Can I send a prompt to an existing OpenCode session?
+### 能给已有 OpenCode 会话发 prompt 吗？
 
-Yes. That is the core operation: `POST /api/session/{sessionID}/prompt`. The scheduler stores the session id and appends the message when due.
+可以，这是核心操作：`POST /api/session/{sessionID}/prompt`。
 
-### What happens if my computer is asleep at the scheduled time?
+### 到点时电脑关机了怎么办？
 
-The job stays `pending` and retries while OpenCode is unreachable. On restart, it sends only if it is within the 120-minute grace window; otherwise it becomes `missed` and waits for a manual **resend**. This avoids firing a stale idea at the wrong time.
+任务保持 `pending`，OpenCode 不可达就重试。重启后只在 120 分钟宽限内补发；超过就标 `missed`，让你手动“重发”，避免半夜的想法中午突然发出去。
 
-### What if the session is busy?
+### 会话正忙怎么办？
 
-Default: wait for idle, re-checking every 30 seconds, up to 30 minutes. Then mark it `missed`. You can choose **steer** (inject into the current turn) or **skip** per schedule.
+默认等空闲，每 30 秒复查，最多 30 分钟，超时标 `missed`。也可以每条任务选“插入当前轮”或“跳过”。
 
-### Does it work with DeepSeek off-peak pricing?
+### 是插件吗？要改 OpenCode 吗？
 
-Yes, and it shows the official peak/off-peak windows. On a pay-as-you-go DeepSeek key, off-peak is half price. On opencode-go, it halves the allowance consumed rather than the subscription price.
+不是，也不用改。V2 插件不能注册 HTTP 路由，也没有持久定时器 API，所以可靠做法是独立进程走公开 API。
 
-### Is it a plugin? Do I need to modify OpenCode?
+### 手机能用吗？
 
-No. OpenCode V2 plugins cannot register HTTP routes or provide a durable scheduler, so the reliable design is a separate process using the public API. OpenCode itself is untouched.
+能。`--lan` 快速用；Tailscale/Cloudflare 提供 HTTPS 后可安装 PWA。会话页是紧凑速览，“完整会话”交给 OpenCode 自己的移动端 UI。
 
-### Does it work on a phone?
+### 支持重复任务吗？
 
-Yes. Use `--lan` for quick access, or Tailscale/Cloudflare for an installable HTTPS PWA. The session view is a compact transcript; **Open full session** hands off to OpenCode's own mobile-optimized web UI.
+0.1 只做一次性。数据模型留了扩展空间，但刻意先不做 cron：这个场景是“今晚这句话”，不是“持续烧 token 的定时任务”。
 
-### Is there a recurring schedule?
+## 限制
 
-Not in 0.1. The data model has room for it, but one-shot is deliberate: the use case is “this thought, tonight”, not “a cron job that keeps spending tokens”.
+- 单用户、单 OpenCode 实例；没有多租户。
+- OpenCode V2 API 标注 experimental；升级后跑一次 `ocsched doctor`。
+- 紧凑会话页不是完整 Markdown/diff 渲染器；工具输出、diff、图片请走原生深链。
+- 暂无推送通知；靠 PWA 角标和队列状态。
+- 自动批准权限本身有风险；默认等待。
 
-## Limitations
-
-- Single-user, single OpenCode instance. No multi-tenant accounts.
-- OpenCode V2's HTTP API is marked experimental; pin a known version and run `ocsched doctor` after upgrades.
-- The compact transcript is not a full Markdown/diff renderer. Use the native deep link for tool output, diffs and images.
-- No push notification channel yet; the PWA badge and queue status are the feedback loop.
-- Auto-approving permissions is inherently risky. The default is to wait.
-
-## Development
+## 开发
 
 ```bash
 git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
 cd opencode-scheduled-messages
-npm test                 # 39 tests, no network, no dependencies
+npm test          # 40 个测试，无网络、无依赖
 node bin/ocsched.js --help
 ```
 
-Source layout: `src/store.js` (SQLite), `src/scheduler.js` (state machine), `src/http.js` (gateway), `src/opencode.js` (API client), `public/` (PWA).
+源码：`src/store.js`（SQLite）、`src/scheduler.js`（状态机）、`src/http.js`（网关）、`src/opencode.js`（API 客户端）、`public/`（PWA）。
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+## 许可证
 
-## License
-
-[PolyForm Noncommercial License 1.0.0](LICENSE). Commercial use requires a separate license; open an issue to discuss.
-
----
-
-**Keywords:** OpenCode scheduled messages, OpenCode scheduler, OpenCode cron, OpenCode V2 prompt API, send prompt to existing OpenCode session, DeepSeek off-peak, OpenCode mobile PWA, self-hosted AI coding scheduler, Tailscale OpenCode, Cloudflare Tunnel OpenCode.
+[PolyForm Noncommercial 1.0.0](LICENSE)。商业使用需单独授权；请开 issue 联系。

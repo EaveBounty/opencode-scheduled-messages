@@ -3,7 +3,7 @@ import { mkdir, writeFile, chmod, rename } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { randomToken, log } from "./util.js";
+import { randomToken, hashPassword, verifyPassword, safeEqual, log } from "./util.js";
 
 const APP_DIR = "opencode-scheduled-messages";
 const DEFAULTS = {
@@ -18,6 +18,8 @@ const DEFAULTS = {
   auth: {
     cookieName: "ocsm_session",
     sessionDays: 30,
+    passwordHash: null,
+    tokenHash: null,
   },
   defaults: {
     timezone: "Asia/Shanghai",
@@ -120,7 +122,8 @@ function persisted(config) {
     auth: {
       cookieName: config.auth.cookieName,
       sessionDays: config.auth.sessionDays,
-      tokenHash: config.auth.tokenHash,
+      passwordHash: config.auth.passwordHash || null,
+      tokenHash: config.auth.tokenHash || null,
       cookieSecret: config.auth.cookieSecret,
     },
     defaults: config.defaults,
@@ -141,19 +144,26 @@ export async function loadConfig({ env = process.env, overrides = {} } = {}) {
   // Environment token wins for containers and automated tests.
   if (env.OCSM_TOKEN) config.auth.tokenHash = hashToken(env.OCSM_TOKEN);
 
-  if (!config.auth.tokenHash) {
+  if (!config.auth.passwordHash && !config.auth.tokenHash) {
     createdToken = randomToken(24);
-    config.auth.tokenHash = hashToken(createdToken);
+    config.auth.passwordHash = hashPassword(createdToken);
   }
   if (!config.auth.cookieSecret) config.auth.cookieSecret = randomToken(32);
 
-  if (overrides.rotateToken) {
+  if (overrides.rotateToken || overrides.rotatePassword) {
     createdToken = randomToken(24);
-    config.auth.tokenHash = hashToken(createdToken);
+    config.auth.passwordHash = hashPassword(createdToken);
+    config.auth.tokenHash = null;
     config.auth.cookieSecret = randomToken(32);
   }
 
-  const { rotateToken: _drop, ...safeOverrides } = overrides;
+  if (overrides.setPassword) {
+    config.auth.passwordHash = hashPassword(String(overrides.setPassword));
+    config.auth.tokenHash = null;
+    config.auth.cookieSecret = randomToken(32);
+  }
+
+  const { rotateToken: _dropToken, rotatePassword: _dropPassword, setPassword: _dropPasswordValue, ...safeOverrides } = overrides;
   config = {
     ...config,
     ...safeOverrides,
@@ -212,13 +222,22 @@ export function tokenHash(token) {
   return hashToken(token);
 }
 
+/** Verify a login password, or a legacy/API token hash. */
+export function verifySecret(config, secret) {
+  if (!secret) return false;
+  if (config.auth.passwordHash && verifyPassword(secret, config.auth.passwordHash)) return true;
+  if (config.auth.tokenHash && safeEqual(hashToken(secret), config.auth.tokenHash)) return true;
+  return false;
+}
+
 export function printTokenBanner(token, paths) {
   const line = "─".repeat(64);
   console.error(`\n${line}`);
-  console.error("  Access token (shown once; store it now)");
+  console.error("  Initial password (shown once; change it after login)");
   console.error(`  ${token}`);
   console.error(`  Config: ${paths.configFile}`);
-  console.error("  Lost it? Run with --rotate-token to issue a new one.");
+  console.error("  If this was deployed for someone else, relay it privately and ask them to change it.");
+  console.error("  Lost it? Run with --rotate-token to issue a new one (then restart the service).");
   console.error(`${line}\n`);
-  log("info", "Generated a new access token");
+  log("info", "Generated a new initial password");
 }

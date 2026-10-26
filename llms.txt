@@ -13,7 +13,7 @@
 
 - Not an OpenCode plugin. V2 plugins cannot register HTTP routes or own a durable timer.
 - Not a fork of OpenCode, and it does not inject scripts into the native web UI.
-- Not multi-user. One gateway, one OpenCode instance, one access token.
+- Not multi-user. One gateway, one OpenCode instance, one login password.
 - Not a recurring cron system in 0.1; schedules are one-shot.
 
 ## Key facts

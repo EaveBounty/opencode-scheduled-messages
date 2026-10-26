@@ -23,14 +23,14 @@ We aim to acknowledge within 7 days.
 
 ## Threat model
 
-The gateway is a **single-user local control plane**. It can send arbitrary text into your coding sessions, which may in turn run tools. Treat its access token like a shell credential.
+The gateway is a **single-user local control plane**. It can send arbitrary text into your coding sessions, which may in turn run tools. Treat its login password like a shell credential.
 
 | Threat | Mitigation |
 |---|---|
 | LAN attacker reads the token | Loopback default; HTTPS via Tailscale/Cloudflare; token never in URLs |
 | XSS in a session title/message | All text escaped; CSP `script-src 'self'`; no `innerHTML` of raw content |
 | CSRF from another origin | `SameSite=Strict` cookie + `Origin` check on every write |
-| Token brute force | 24-byte random token, SHA-256 hash, constant-time compare, 10 attempts / 15 min / IP |
+| Password brute force | 24-byte random initial password, scrypt hash, constant-time compare, 10 failed logins / 15 min / IP |
 | OpenCode password leak | Read from `service.json`; injected server-side; never serialized to the browser or logs |
 | Cookie theft | `HttpOnly`, `Secure` behind HTTPS, HMAC-signed expiry, rotation regenerates the cookie secret |
 | Malicious session content | Rendered as text, no HTML; links restricted to `http(s)`; tool output in `<pre>` |
@@ -49,6 +49,7 @@ The gateway is a **single-user local control plane**. It can send arbitrary text
 
 - [ ] Gateway binds `127.0.0.1` unless you intentionally use `--lan`.
 - [ ] Public access is behind HTTPS + an identity-aware proxy.
+- [ ] Change the password after the first login (Settings → Change password).
 - [ ] `ocsched --rotate-token` after sharing a screen or suspecting a leak, then restart the service (`systemctl --user restart ocsched`).
 - [ ] `OPENCODE_PASSWORD` is not committed; `service.json` is not copied into the repo.
 - [ ] Permission policy is `wait` unless you have a specific reason.

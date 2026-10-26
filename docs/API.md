@@ -1,6 +1,6 @@
 # Gateway API
 
-All routes are same-origin. Browser auth is a signed `ocsm_session` cookie; automation can use `Authorization: Bearer <access token>`. Cookie-authenticated writes must send a matching `Origin`.
+All routes are same-origin. Browser auth is a signed `ocsm_session` cookie; automation can use `Authorization: Bearer <password>` (a legacy token still works). Cookie-authenticated writes must send a matching `Origin`.
 
 Errors are `{ "error": { "code": "...", "message": "...", "details"?: ... } }`.
 

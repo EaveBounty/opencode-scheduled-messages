@@ -20,13 +20,13 @@ License: PolyForm Noncommercial License 1.0.0
 
 - Not an OpenCode plugin. V2 plugins cannot register HTTP routes or own a durable timer.
 - Not a fork of OpenCode; it injects no scripts into the native web UI.
-- Not multi-user: one gateway, one OpenCode instance, one access token.
+- Not multi-user: one gateway, one OpenCode instance, one login password.
 - Not a recurring cron system in 0.1; schedules are one-shot.
 
 ## Measured facts
 
 - npm tarball: 148 KB packed, 325 KB unpacked, 28 files (`npm pack`, 2026-10-26).
-- Tests: 39 passing via `npm test`, no network and no LLM calls.
+- Tests: 40 passing via `npm test`, no network and no LLM calls.
 - Idle memory: 70-110 MB RSS, peak near 150 MB (docs/ARCHITECTURE.md).
 - Scheduler tick: 10 seconds; grace window: 120 minutes; busy wait: 30 minutes.
 - DeepSeek peak: 01:00-04:00 and 06:00-10:00 UTC, Monday-Friday.
@@ -38,8 +38,17 @@ License: PolyForm Noncommercial License 1.0.0
     npx opencode-scheduled-messages
 
 Requires Node.js >= 22.6.0 and a running OpenCode V2 server. The first start
-prints a one-time access token; the PWA is served on http://127.0.0.1:8788.
+prints a one-time initial password; sign in with it, then change it in Settings
+(stored as a scrypt hash). The PWA is served on http://127.0.0.1:8788.
 For a phone: `ocsched --lan`, or Tailscale / Cloudflare Tunnel for HTTPS.
+
+## Languages
+
+- One URL serves English and Simplified Chinese. `?lang=en` / `?lang=zh`;
+  without a parameter the page follows the browser language and remembers the
+  manual choice in localStorage. No redirect, no per-language subdirectory.
+- 中文摘要：把一条消息定时追加到已有的 OpenCode V2 会话，或按需新建；
+  自托管 Node + SQLite 队列，零运行时依赖，手机 PWA，支持 DeepSeek 谷时发送。
 
 ## Docs
 

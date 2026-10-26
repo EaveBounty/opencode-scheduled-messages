@@ -1,11 +1,14 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>opencode-scheduled-messages: prompt an existing OpenCode session</title>
-<meta name="description" content="Schedule a message into an existing OpenCode V2 session. Self-hosted Node + SQLite queue, zero runtime dependencies, mobile PWA, DeepSeek off-peak aware.">
+<meta name="description" content="Schedule a message into an existing OpenCode V2 session. Self-hosted Node + SQLite queue, zero runtime dependencies, mobile PWA, DeepSeek off-peak aware. Bilingual EN/中文.">
 <link rel="canonical" href="https://eavebounty.github.io/opencode-scheduled-messages/">
+<link rel="alternate" hreflang="en" href="https://eavebounty.github.io/opencode-scheduled-messages/">
+<link rel="alternate" hreflang="zh-CN" href="https://eavebounty.github.io/opencode-scheduled-messages/">
+<link rel="alternate" hreflang="x-default" href="https://eavebounty.github.io/opencode-scheduled-messages/">
 <meta name="author" content="EaveBounty">
 <meta name="robots" content="index,follow">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -16,6 +19,8 @@
 <meta property="og:title" content="opencode-scheduled-messages — schedule a prompt in an existing OpenCode V2 session">
 <meta property="og:description" content="A self-hosted Node process, SQLite queue and mobile PWA that appends a message to the OpenCode V2 session you choose. Not a plugin. Not a fork. Single-user.">
 <meta property="og:url" content="https://eavebounty.github.io/opencode-scheduled-messages/">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="zh_CN">
 <meta property="og:image" content="https://eavebounty.github.io/opencode-scheduled-messages/social-preview.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
@@ -66,7 +71,7 @@
   .wrap { max-inline-size: 64rem; margin: 0 auto; padding: 1.4rem clamp(1rem, 4vw, 2rem) 4rem; }
   a { color: var(--accent); text-underline-offset: 0.18em; }
   a:hover { text-decoration-thickness: 2px; }
-  a:focus-visible, summary:focus-visible, [tabindex="-1"]:focus-visible {
+  a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex="-1"]:focus-visible {
     outline: 3px solid var(--accent);
     outline-offset: 3px;
     border-radius: 4px;
@@ -85,6 +90,13 @@
   .skip:focus { left: 0.75rem; top: 0.75rem; }
 
   .masthead { border-bottom: 1px solid var(--line); padding-bottom: 1rem; }
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem 1rem;
+  }
   .eyebrow {
     margin: 0.25rem 0 0;
     color: var(--muted);
@@ -92,6 +104,32 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
+  .topbar .eyebrow { margin: 0; }
+  html[data-lang="zh"] .eyebrow { text-transform: none; letter-spacing: 0.02em; }
+  .lang-switch { display: flex; flex: 0 0 auto; gap: 0.35rem; }
+  .lang-switch button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0.35rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--card);
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.84rem;
+    cursor: pointer;
+  }
+  .lang-switch button:hover { border-color: var(--accent); color: var(--accent); }
+  .lang-switch button[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
+    font-weight: 650;
+  }
+  .lang-switch button[aria-pressed="true"]:hover { color: var(--bg); }
+
   h1 {
     margin: 0.4rem 0 0.45rem;
     font-size: clamp(1.65rem, 5.4vw, 2.7rem);
@@ -221,12 +259,17 @@
   }
   footer p { max-inline-size: 52rem; margin: 0.4rem 0; }
 
+  /* Language visibility: English is the no-JS default. */
+  .lang-zh { display: none; }
+  html[data-lang="zh"] .lang-en { display: none; }
+  html[data-lang="zh"] .lang-zh { display: block; }
+
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
   @media print {
-    .skip, nav, .actions, .cta { display: none !important; }
+    .skip, nav, .actions, .cta, .lang-switch { display: none !important; }
     body { background: #fff; color: #000; font-size: 11pt; }
     .wrap { max-inline-size: none; padding: 0; }
     a { color: #000; text-decoration: underline; }
@@ -237,6 +280,22 @@
     tr, li { break-inside: avoid; }
   }
 </style>
+
+<script>
+/* Runs before paint: query > localStorage > navigator.language. English stays the no-JS default. */
+(function () {
+  var q = /[?&]lang=(zh|en)\b/i.exec(location.search);
+  var saved = null;
+  try { saved = localStorage.getItem("ocsched-lang"); } catch (e) {}
+  var nav = (navigator.language || "en").toLowerCase();
+  var lang = (q && q[1].toLowerCase()) ||
+             (saved === "zh" || saved === "en" ? saved : null) ||
+             (nav.indexOf("zh") === 0 ? "zh" : "en");
+  document.documentElement.setAttribute("data-lang", lang);
+  document.documentElement.setAttribute("lang", lang === "zh" ? "zh-CN" : "en");
+  window.__ocsLang = lang;
+})();
+</script>
 
 <script type="application/ld+json">
 {
@@ -278,209 +337,426 @@
 </script>
 </head>
 <body>
-<a class="skip" href="#main">Skip to main content</a>
+<a class="skip" href="#main"><span class="lang-en">Skip to main content</span><span class="lang-zh" lang="zh-CN">跳到正文</span></a>
 <main id="main" class="wrap" tabindex="-1">
 <article>
 
 <header class="masthead">
-  <p class="eyebrow">OpenCode V2 · self-hosted · single-user</p>
-  <h1>opencode-scheduled-messages</h1>
-  <p class="sub">Schedule a message into an <strong>existing</strong> OpenCode V2 session. Write at peak, send off-peak.</p>
-  <p class="meta">v0.1.0 · last updated 2026-10-26 · PolyForm Noncommercial License 1.0.0 · maintainer: EaveBounty</p>
-  <nav aria-label="Page sections">
-    <a href="#facts">Key facts</a>
-    <a href="#install">Install</a>
-    <a href="#compare">Compare</a>
-    <a href="#deepseek">DeepSeek pricing</a>
-    <a href="#faq">FAQ</a>
-    <a href="#zh" lang="zh-CN">中文</a>
-  </nav>
+  <div class="topbar">
+    <p class="eyebrow"><span class="lang-en">OpenCode V2 · self-hosted · single-user</span><span class="lang-zh" lang="zh-CN">opencode-scheduled-messages · OpenCode V2 · 自托管 · 单用户</span></p>
+    <div class="lang-switch" role="group" aria-label="Language / 语言">
+      <button type="button" data-lang-set="en" aria-pressed="true" lang="en">English</button>
+      <button type="button" data-lang-set="zh" aria-pressed="false" lang="zh-CN">中文</button>
+    </div>
+  </div>
+  <h1><span class="lang-en">opencode-scheduled-messages</span><span class="lang-zh" lang="zh-CN">OpenCode 定时消息</span></h1>
+  <p class="sub lang-en">Schedule a message into an <strong>existing</strong> OpenCode V2 session. Write at peak, send off-peak.</p>
+  <p class="sub lang-zh" lang="zh-CN">把一条消息定时送进<strong>已有的</strong> OpenCode V2 会话。峰时写，谷时发。</p>
+  <p class="meta lang-en">v0.1.0 · last updated 2026-10-26 · PolyForm Noncommercial License 1.0.0 · maintainer: EaveBounty</p>
+  <p class="meta lang-zh" lang="zh-CN">v0.1.0 · 更新于 2026-10-26 · PolyForm Noncommercial License 1.0.0 · 维护者：EaveBounty</p>
+  <div class="lang-en">
+    <nav aria-label="Page sections">
+      <a href="#facts">Key facts</a>
+      <a href="#install">Install</a>
+      <a href="#compare">Compare</a>
+      <a href="#deepseek">DeepSeek pricing</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+  </div>
+  <div class="lang-zh" lang="zh-CN">
+    <nav aria-label="页面章节">
+      <a href="#facts">关键事实</a>
+      <a href="#install">安装</a>
+      <a href="#compare">对比</a>
+      <a href="#deepseek">DeepSeek 价格</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+  </div>
 </header>
 
-<p class="lede" id="tldr"><strong>TL;DR:</strong> opencode-scheduled-messages appends a prompt to an <strong>existing</strong> OpenCode V2 session at a chosen time, or creates one when asked. It is a separate Node.js process on the public HTTP API: <strong>not an OpenCode plugin</strong>, it <strong>does not fork OpenCode</strong>, and it is <strong>single-user</strong>. In short, a timer for the conversation you already have.</p>
+<p class="lede lang-en" id="tldr"><strong>TL;DR:</strong> opencode-scheduled-messages appends a prompt to an <strong>existing</strong> OpenCode V2 session at a chosen time, or creates one when asked. It is a separate Node.js process on the public HTTP API: <strong>not an OpenCode plugin</strong>, it <strong>does not fork OpenCode</strong>, and it is <strong>single-user</strong>. In short, a timer for the conversation you already have.</p>
+<p class="lede lang-zh" lang="zh-CN"><strong>一句话：</strong>opencode-scheduled-messages 会在你选定的时间，把一条 prompt 追加到<strong>已有的</strong> OpenCode V2 会话里；需要时也可以新建会话。它是独立运行的 Node.js 进程，走公开 HTTP API：<strong>不是 OpenCode 插件</strong>，<strong>不 fork OpenCode</strong>，且<strong>只服务单个用户</strong>。简单说，它就是给现有对话加的一个定时器。</p>
 
-<div class="actions">
-  <a class="cta" href="https://www.npmjs.com/package/opencode-scheduled-messages">Install from npm</a>
-  <a class="cta ghost" href="https://github.com/EaveBounty/opencode-scheduled-messages">Source on GitHub</a>
-  <a class="cta ghost" href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/DEPLOY.md">Deployment guide</a>
+<div class="lang-en">
+  <div class="actions">
+    <a class="cta" href="https://www.npmjs.com/package/opencode-scheduled-messages">Install from npm</a>
+    <a class="cta ghost" href="https://github.com/EaveBounty/opencode-scheduled-messages">Source on GitHub</a>
+    <a class="cta ghost" href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/DEPLOY.md">Deployment guide</a>
+  </div>
+
+  <div class="grid" role="group" aria-label="Project at a glance">
+    <div class="card">
+      <p class="card-title">What it is</p>
+      <p>A timer, a SQLite queue and a mobile PWA for OpenCode V2, packed into one Node process with zero runtime dependencies.</p>
+    </div>
+    <div class="card">
+      <p class="card-title">Who it is for</p>
+      <p>One person running OpenCode on a laptop or home server who thinks in a long thread and wants a sentence delivered later, off-peak, or after the current turn.</p>
+    </div>
+    <div class="card">
+      <p class="card-title">What it replaces</p>
+      <p>The manual workaround: staying awake, a shell <code>sleep</code> that loses the thread, or a scheduler that starts a fresh session for every job.</p>
+    </div>
+    <div class="card">
+      <p class="card-title">Core difference</p>
+      <p>The message is appended to the session you already have, through <code>POST /api/session/{id}/prompt</code>, not sent into a new empty context.</p>
+    </div>
+  </div>
 </div>
 
-<div class="grid" role="group" aria-label="Project at a glance">
-  <div class="card">
-    <p class="card-title">What it is</p>
-    <p>A timer, a SQLite queue and a mobile PWA for OpenCode V2, packed into one Node process with zero runtime dependencies.</p>
+<div class="lang-zh" lang="zh-CN">
+  <div class="actions">
+    <a class="cta" href="https://www.npmjs.com/package/opencode-scheduled-messages">从 npm 安装</a>
+    <a class="cta ghost" href="https://github.com/EaveBounty/opencode-scheduled-messages">GitHub 源码</a>
+    <a class="cta ghost" href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/DEPLOY.md">部署指南</a>
   </div>
-  <div class="card">
-    <p class="card-title">Who it is for</p>
-    <p>One person running OpenCode on a laptop or home server who thinks in a long thread and wants a sentence delivered later, off-peak, or after the current turn.</p>
-  </div>
-  <div class="card">
-    <p class="card-title">What it replaces</p>
-    <p>The manual workaround: staying awake, a shell <code>sleep</code> that loses the thread, or a scheduler that starts a fresh session for every job.</p>
-  </div>
-  <div class="card">
-    <p class="card-title">Core difference</p>
-    <p>The message is appended to the session you already have, through <code>POST /api/session/{id}/prompt</code>, not sent into a new empty context.</p>
+
+  <div class="grid" role="group" aria-label="项目速览">
+    <div class="card">
+      <p class="card-title">它是什么</p>
+      <p>一个定时器、一个 SQLite 队列和一个手机 PWA，打包进单个 Node 进程，零运行时依赖。</p>
+    </div>
+    <div class="card">
+      <p class="card-title">适合谁</p>
+      <p>一个人在自己的笔记本或家用服务器上跑 OpenCode，习惯在一个长会话里思考，只想让某句话晚点、错峰、或在当前回合结束后送达。</p>
+    </div>
+    <div class="card">
+      <p class="card-title">替代了什么</p>
+      <p>替代这些手工办法：熬夜等着、写个会丢上下文的 shell <code>sleep</code>、或者用每次任务都新建会话的调度器。</p>
+    </div>
+    <div class="card">
+      <p class="card-title">核心区别</p>
+      <p>消息通过 <code>POST /api/session/{id}/prompt</code> 追加到你已有的会话，而不是丢进一个新的空上下文。</p>
+    </div>
   </div>
 </div>
 
-<h2 id="why">Why the timer has to live outside OpenCode</h2>
-<p>OpenCode V2 keeps a durable inbox, but a queued item does not wake itself. Its plugin surface cannot register HTTP routes or own a timer that survives a restart, and a <code>setTimeout</code> in a browser tab dies when the phone sleeps. An OS cron entry can start a fresh session, yet the sentence you wanted to add belongs to the thread you were already thinking in.</p>
-<p>This project stores <code>{sessionID, text, dueAt, timezone, policies}</code> in SQLite, claims due rows atomically every 10 seconds, and calls the public prompt endpoint with a client-generated <code>msg_</code> id. Retries reuse that id, and OpenCode returns the original message for a duplicate, so a retry cannot send the sentence twice.</p>
-<blockquote>
-  <p>The useful primitive is not “run an agent on a schedule”. It is “deliver this thought to the conversation that already exists, at the time I chose”.</p>
-</blockquote>
-
-<h2 id="facts">Key facts, measured for v0.1.0</h2>
-<div class="table-wrap">
-<table>
-  <caption>Measured on 2026-10-26 for v0.1.0; the memory baseline is Linux x86_64.</caption>
-  <tbody>
-    <tr>
-      <th scope="row">npm tarball</th>
-      <td>148 KB packed, 325 KB unpacked, 28 files</td>
-      <td>Measured with <code>npm pack</code>; verify on the <a href="https://www.npmjs.com/package/opencode-scheduled-messages">npm listing</a>.</td>
-    </tr>
-    <tr>
-      <th scope="row">Test suite</th>
-      <td>39 tests, no network and no LLM calls</td>
-      <td><code>npm test</code>; see the <a href="https://github.com/EaveBounty/opencode-scheduled-messages/tree/main/test">test directory</a>.</td>
-    </tr>
-    <tr>
-      <th scope="row">Idle memory</th>
-      <td>70–110 MB RSS, peak near 150 MB</td>
-      <td>Baseline in <a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/ARCHITECTURE.md">docs/ARCHITECTURE.md</a>.</td>
-    </tr>
-    <tr>
-      <th scope="row">Scheduler tick</th>
-      <td>10 seconds, atomic claim of one due row</td>
-      <td><a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/src/scheduler.js">src/scheduler.js</a>.</td>
-    </tr>
-    <tr>
-      <th scope="row">Grace window</th>
-      <td>120 minutes after downtime, then <code>missed</code></td>
-      <td>Policy in the <a href="https://github.com/EaveBounty/opencode-scheduled-messages#how-it-works">README</a>.</td>
-    </tr>
-    <tr>
-      <th scope="row">Busy wait</th>
-      <td>30 minutes by default, re-checking every 30 seconds</td>
-      <td>Busy policy in the <a href="https://github.com/EaveBounty/opencode-scheduled-messages#faq">README FAQ</a>.</td>
-    </tr>
-    <tr>
-      <th scope="row">Runtime</th>
-      <td>Node.js ≥ 22.6.0, zero runtime dependencies</td>
-      <td><a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/package.json">package.json</a>.</td>
-    </tr>
-    <tr>
-      <th scope="row">License</th>
-      <td>PolyForm Noncommercial License 1.0.0</td>
-      <td><a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/LICENSE">LICENSE</a>.</td>
-    </tr>
-  </tbody>
-</table>
+<h2 id="why"><span class="lang-en">Why the timer has to live outside OpenCode</span><span class="lang-zh" lang="zh-CN">为什么定时器必须放在 OpenCode 之外</span></h2>
+<div class="lang-en">
+  <p>OpenCode V2 keeps a durable inbox, but a queued item does not wake itself. Its plugin surface cannot register HTTP routes or own a timer that survives a restart, and a <code>setTimeout</code> in a browser tab dies when the phone sleeps. An OS cron entry can start a fresh session, yet the sentence you wanted to add belongs to the thread you were already thinking in.</p>
+  <p>This project stores <code>{sessionID, text, dueAt, timezone, policies}</code> in SQLite, claims due rows atomically every 10 seconds, and calls the public prompt endpoint with a client-generated <code>msg_</code> id. Retries reuse that id, and OpenCode returns the original message for a duplicate, so a retry cannot send the sentence twice.</p>
+  <blockquote>
+    <p>The useful primitive is not “run an agent on a schedule”. It is “deliver this thought to the conversation that already exists, at the time I chose”.</p>
+  </blockquote>
+</div>
+<div class="lang-zh" lang="zh-CN">
+  <p>OpenCode V2 有持久收件箱，但队列里的条目不会自己醒来。它的插件接口既无法注册 HTTP 路由，也无法持有能跨重启存活的定时器；浏览器标签页里的 <code>setTimeout</code> 会在手机休眠时失效。系统 cron 能启动一个新会话，可你想补上的那句话，属于你原本就在思考的那个线程。</p>
+  <p>本项目把 <code>{sessionID, text, dueAt, timezone, policies}</code> 存进 SQLite，每 10 秒原子地领取到期的行，并带着客户端生成的 <code>msg_</code> id 调用公开的 prompt 接口。重试复用同一个 id，OpenCode 对重复 id 返回原消息，所以重试不会把同一句话发两遍。</p>
+  <blockquote>
+    <p>真正有用的原语不是“按计划跑一个 agent”，而是“在我选定的时间，把这个想法送到已经存在的对话里”。</p>
+  </blockquote>
 </div>
 
-<h2 id="install">Install and schedule the first message</h2>
-<p>You need Node.js 22.6 or newer and a running OpenCode V2 server. The scheduler prints a one-time access token on first start; the browser never receives the OpenCode password, because the gateway injects Basic auth server-side.</p>
+<h2 id="facts"><span class="lang-en">Key facts, measured for v0.1.0</span><span class="lang-zh" lang="zh-CN">关键事实（v0.1.0 实测）</span></h2>
+<div class="lang-en">
+  <div class="table-wrap">
+  <table>
+    <caption>Measured on 2026-10-26 for v0.1.0; the memory baseline is Linux x86_64.</caption>
+    <tbody>
+      <tr>
+        <th scope="row">npm tarball</th>
+        <td>148 KB packed, 325 KB unpacked, 28 files</td>
+        <td>Measured with <code>npm pack</code>; verify on the <a href="https://www.npmjs.com/package/opencode-scheduled-messages">npm listing</a>.</td>
+      </tr>
+      <tr>
+        <th scope="row">Test suite</th>
+        <td>40 tests, no network and no LLM calls</td>
+        <td><code>npm test</code>; see the <a href="https://github.com/EaveBounty/opencode-scheduled-messages/tree/main/test">test directory</a>.</td>
+      </tr>
+      <tr>
+        <th scope="row">Idle memory</th>
+        <td>70–110 MB RSS, peak near 150 MB</td>
+        <td>Baseline in <a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/ARCHITECTURE.md">docs/ARCHITECTURE.md</a>.</td>
+      </tr>
+      <tr>
+        <th scope="row">Scheduler tick</th>
+        <td>10 seconds, atomic claim of one due row</td>
+        <td><a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/src/scheduler.js">src/scheduler.js</a>.</td>
+      </tr>
+      <tr>
+        <th scope="row">Grace window</th>
+        <td>120 minutes after downtime, then <code>missed</code></td>
+        <td>Policy in the <a href="https://github.com/EaveBounty/opencode-scheduled-messages#how-it-works">README</a>.</td>
+      </tr>
+      <tr>
+        <th scope="row">Busy wait</th>
+        <td>30 minutes by default, re-checking every 30 seconds</td>
+        <td>Busy policy in the <a href="https://github.com/EaveBounty/opencode-scheduled-messages#faq">README FAQ</a>.</td>
+      </tr>
+      <tr>
+        <th scope="row">Runtime</th>
+        <td>Node.js ≥ 22.6.0, zero runtime dependencies</td>
+        <td><a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/package.json">package.json</a>.</td>
+      </tr>
+      <tr>
+        <th scope="row">License</th>
+        <td>PolyForm Noncommercial License 1.0.0</td>
+        <td><a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/LICENSE">LICENSE</a>.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+<div class="lang-zh" lang="zh-CN">
+  <div class="table-wrap">
+  <table>
+    <caption>2026-10-26 在 v0.1.0 上实测；内存基线为 Linux x86_64。</caption>
+    <tbody>
+      <tr>
+        <th scope="row">npm 包体</th>
+        <td>压缩 148 KB，解包 325 KB，共 28 个文件</td>
+        <td>用 <code>npm pack</code> 实测，可在 <a href="https://www.npmjs.com/package/opencode-scheduled-messages">npm 页面</a>复核。</td>
+      </tr>
+      <tr>
+        <th scope="row">测试</th>
+        <td>40 个测试，不联网、不调用 LLM</td>
+        <td><code>npm test</code>；见 <a href="https://github.com/EaveBounty/opencode-scheduled-messages/tree/main/test">test 目录</a>。</td>
+      </tr>
+      <tr>
+        <th scope="row">空闲内存</th>
+        <td>RSS 70–110 MB，峰值接近 150 MB</td>
+        <td>基线见 <a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/ARCHITECTURE.md">docs/ARCHITECTURE.md</a>。</td>
+      </tr>
+      <tr>
+        <th scope="row">调度周期</th>
+        <td>10 秒一次，原子领取一条到期记录</td>
+        <td><a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/src/scheduler.js">src/scheduler.js</a>。</td>
+      </tr>
+      <tr>
+        <th scope="row">宽限窗口</th>
+        <td>停机后 120 分钟内补发，之后标记 <code>missed</code></td>
+        <td>策略见 <a href="https://github.com/EaveBounty/opencode-scheduled-messages#how-it-works">README</a>。</td>
+      </tr>
+      <tr>
+        <th scope="row">忙碌等待</th>
+        <td>默认等 30 分钟，每 30 秒复查一次</td>
+        <td>见 <a href="https://github.com/EaveBounty/opencode-scheduled-messages#faq">README 常见问题</a>。</td>
+      </tr>
+      <tr>
+        <th scope="row">运行环境</th>
+        <td>Node.js ≥ 22.6.0，零运行时依赖</td>
+        <td><a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/package.json">package.json</a>。</td>
+      </tr>
+      <tr>
+        <th scope="row">许可证</th>
+        <td>PolyForm Noncommercial License 1.0.0</td>
+        <td><a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/LICENSE">LICENSE</a>。</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<h2 id="install"><span class="lang-en">Install and schedule the first message</span><span class="lang-zh" lang="zh-CN">安装并安排第一条消息</span></h2>
+<div class="lang-en">
+  <p>You need Node.js 22.6 or newer and a running OpenCode V2 server. On first start the scheduler prints an <strong>initial password</strong> once; sign in with it, then change it in Settings (it is stored as a scrypt hash). The browser never receives the OpenCode password, because the gateway injects Basic auth server-side.</p>
 <pre><code># 1. Start OpenCode's HTTP API if it is not already running
 opencode serve --service
 
-# 2. Start the scheduler (prints a one-time access token)
+# 2. Start the scheduler (prints the initial password once)
 npx opencode-scheduled-messages
 
-# 3. Open the PWA, paste the token, pick a session and a time
+# 3. Open the PWA, sign in with the initial password,
+#    pick a session and a time
 #    http://127.0.0.1:8788
 </code></pre>
-<p>On a phone in the same Wi-Fi, run <code>ocsched --lan</code> and open the printed LAN address. For an installable HTTPS PWA, put Tailscale or Cloudflare Tunnel in front:</p>
+  <p>On a phone in the same Wi-Fi, run <code>ocsched --lan</code> and open the printed LAN address. For an installable HTTPS PWA, put Tailscale or Cloudflare Tunnel in front:</p>
 <pre><code>tailscale serve --bg --https=443 http://127.0.0.1:8788
 tailscale serve --bg --https=8443 http://127.0.0.1:4096
 # then set Settings → OpenCode native URL to
 # https://&lt;host&gt;.&lt;tailnet&gt;.ts.net:8443
 </code></pre>
-<p>The PWA is mobile-first: 44 px targets, iOS safe areas, a bottom composer and dark/light tokens. “Open full session” hands off to OpenCode's own UI for tool output, diffs and images, so this project does not need to reimplement a Markdown renderer.</p>
-
-<h2 id="behavior">What happens when the machine, the session, or the network is not ready</h2>
-<ul>
-  <li><strong>Session busy.</strong> By default the scheduler waits for idle, re-checks every 30 seconds for up to 30 minutes, then marks the schedule <code>missed</code>. You can choose <em>steer</em> (inject into the current turn) or <em>skip</em> per schedule.</li>
-  <li><strong>OpenCode offline.</strong> The row stays <code>pending</code> and retries. After a restart it sends only inside the 120-minute grace window; later than that it becomes <code>missed</code> and waits for a manual resend, so a stale idea does not fire at noon.</li>
-  <li><strong>Unattended permission request.</strong> The default is to wait for you. Auto-reject, read-only auto-approve and allow-all are opt-in per schedule; allow-all is labelled dangerous because it is.</li>
-  <li><strong>“Sent” is not “finished”.</strong> A 200 response means OpenCode accepted the prompt into its inbox. Execution progress is visible in the native session or over SSE; the queue marks the delivery, not the model's completion.</li>
-</ul>
-
-<h2 id="compare">How it compares: vs opencode-scheduler and opencode-manager</h2>
-<p>The point is not feature count. It is one missing primitive: a delayed prompt into a thread that already exists. Both alternatives are reasonable tools with a different centre of gravity.</p>
-<div class="table-wrap">
-<table>
-  <thead>
-    <tr>
-      <th scope="col">Dimension</th>
-      <th scope="col">opencode-scheduled-messages</th>
-      <th scope="col">opencode-scheduler</th>
-      <th scope="col">opencode-manager</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th scope="row">Target session</th>
-      <td>Appends to an existing session, or creates one on request</td>
-      <td>New session per run</td>
-      <td>New session per run</td>
-    </tr>
-    <tr>
-      <th scope="row">Durability</th>
-      <td>SQLite queue, 10-second tick, 120-minute grace, explicit <code>missed</code> state</td>
-      <td>Delegates timing to the OS scheduler; no catch-up policy described</td>
-      <td>Database-backed jobs; cron mode without catch-up</td>
-    </tr>
-    <tr>
-      <th scope="row">Phone UI</th>
-      <td>Mobile-first PWA plus native deep link</td>
-      <td>No UI</td>
-      <td>Web UI</td>
-    </tr>
-    <tr>
-      <th scope="row">Footprint</th>
-      <td>One Node process, 0 runtime dependencies, 148 KB tarball</td>
-      <td>Runs inside OpenCode as a plugin</td>
-      <td>Bun + React + Docker, larger image</td>
-    </tr>
-    <tr>
-      <th scope="row">Unattended permissions</th>
-      <td>Per schedule: wait, reject, read-only, or allow-all</td>
-      <td>Denies questions by default</td>
-      <td>Not its focus</td>
-    </tr>
-    <tr>
-      <th scope="row">Typical use</th>
-      <td>“This thought, in this thread, tonight”</td>
-      <td>“Start a fresh agent on a schedule”</td>
-      <td>“Manage many projects and sessions in one UI”</td>
-    </tr>
-  </tbody>
-</table>
+  <p>The PWA is mobile-first: 44 px targets, iOS safe areas, a bottom composer and dark/light tokens. “Open full session” hands off to OpenCode's own UI for tool output, diffs and images, so this project does not need to reimplement a Markdown renderer.</p>
 </div>
-<h3>Where the alternatives are better</h3>
-<ul>
-  <li><strong>opencode-scheduler</strong> keeps the deployment surface to one process: it runs as a plugin inside OpenCode, with no second daemon, no extra port and no separate token to store. If a new session per run is acceptable, that is simpler.</li>
-  <li><strong>opencode-manager</strong> covers a broader dashboard: many projects, richer session management and a container-first install. If you want one place to manage everything, it does more than this page's single job.</li>
-  <li><strong>Both</strong> are better choices for recurring scheduled runs or multi-user access. Version 0.1 here is one-shot and single-user on purpose; if you need a team service, this is the wrong tool.</li>
-</ul>
+<div class="lang-zh" lang="zh-CN">
+  <p>需要 Node.js 22.6 或更高版本，以及一个正在运行的 OpenCode V2 服务。首次启动时，调度器会<strong>只打印一次初始密码</strong>；用它登录后，在 Settings 里改成你自己的密码（以 scrypt 哈希保存）。浏览器永远拿不到你的 OpenCode 密码，因为网关在服务端注入 Basic 认证。</p>
+<pre><code># 1. 如果 OpenCode 的 HTTP API 还没跑，先启动它
+opencode serve --service
 
-<h2 id="deepseek">DeepSeek peak and off-peak: 2× price, official windows</h2>
-<p>DeepSeek's official API charges half price during off-peak hours. Peak hours are 01:00–04:00 and 06:00–10:00 UTC, Monday to Friday, excluding Chinese public holidays; everything else is off-peak. In Beijing time that is 09:00–12:00 and 14:00–18:00 on weekdays. The peak token price is exactly 2× the off-peak price, so the same tokens cost 50% less off-peak. Source: <a href="https://api-docs.deepseek.com/quick_start/pricing">DeepSeek API pricing</a>.</p>
-<p>The composer shows whether the chosen time is peak or off-peak. If you use opencode-go, you pay a subscription rather than per token, but the monthly allowance is denominated in dollars: off-peak therefore halves the allowance consumed, not the subscription price. The UI says “谷时 · 半额消耗”, not “save 50%”, because that distinction matters.</p>
+# 2. 启动调度器（首次启动会打印一次初始密码）
+npx opencode-scheduled-messages
 
-<h2 id="boundaries">Boundaries: not a plugin, not a fork, not multi-user</h2>
-<ul>
-  <li><strong>Not an OpenCode plugin.</strong> OpenCode V2 plugins cannot register HTTP routes or own a durable timer, so the scheduler is a separate process using the public API.</li>
-  <li><strong>Does not fork OpenCode.</strong> No browser automation, no injected scripts, no changes to the native web UI or its database.</li>
-  <li><strong>Single-user.</strong> One gateway, one OpenCode instance, one access token. There are no accounts, roles or tenant isolation.</li>
-  <li><strong>Local by default.</strong> It binds <code>127.0.0.1</code>; <code>--lan</code> is an explicit opt-in. The access token is stored as a SHA-256 hash, the OpenCode password stays server-side, writes require a matching Origin, and the CSP is <code>default-src 'self'</code>.</li>
-</ul>
+# 3. 打开 PWA，用初始密码登录，选会话和时间
+#    http://127.0.0.1:8788
+</code></pre>
+  <p>手机连同一个 Wi-Fi 时，运行 <code>ocsched --lan</code> 并打开打印出的局域网地址。要装成 HTTPS PWA，就把 Tailscale 或 Cloudflare Tunnel 放在前面：</p>
+<pre><code>tailscale serve --bg --https=443 http://127.0.0.1:8788
+tailscale serve --bg --https=8443 http://127.0.0.1:4096
+# 然后在 Settings → OpenCode native URL 里填
+# https://&lt;host&gt;.&lt;tailnet&gt;.ts.net:8443
+</code></pre>
+  <p>PWA 是移动优先的：44 px 触控目标、iOS 安全区、底部输入框、明暗两套配色。“打开完整会话”会交给 OpenCode 自己的界面，用来查看工具输出、diff 和图片，所以这个项目不需要重写 Markdown 渲染器。</p>
+</div>
+
+<h2 id="behavior"><span class="lang-en">What happens when the machine, the session, or the network is not ready</span><span class="lang-zh" lang="zh-CN">机器、会话或网络没准备好时会发生什么</span></h2>
+<div class="lang-en">
+  <ul>
+    <li><strong>Session busy.</strong> By default the scheduler waits for idle, re-checks every 30 seconds for up to 30 minutes, then marks the schedule <code>missed</code>. You can choose <em>steer</em> (inject into the current turn) or <em>skip</em> per schedule.</li>
+    <li><strong>OpenCode offline.</strong> The row stays <code>pending</code> and retries. After a restart it sends only inside the 120-minute grace window; later than that it becomes <code>missed</code> and waits for a manual resend, so a stale idea does not fire at noon.</li>
+    <li><strong>Unattended permission request.</strong> The default is to wait for you. Auto-reject, read-only auto-approve and allow-all are opt-in per schedule; allow-all is labelled dangerous because it is.</li>
+    <li><strong>“Sent” is not “finished”.</strong> A 200 response means OpenCode accepted the prompt into its inbox. Execution progress is visible in the native session or over SSE; the queue marks the delivery, not the model's completion.</li>
+  </ul>
+</div>
+<div class="lang-zh" lang="zh-CN">
+  <ul>
+    <li><strong>会话忙碌。</strong>默认等到空闲，每 30 秒复查一次、最多等 30 分钟，然后把该计划标记为 <code>missed</code>。每条计划也可以单独选 <em>steer</em>（注入当前回合）或 <em>skip</em>（跳过）。</li>
+    <li><strong>OpenCode 离线。</strong>该行保持 <code>pending</code> 并重试。重启后只在 120 分钟宽限窗口内发送；更晚就变成 <code>missed</code>，等你手动重发，避免过期的想法在中午突然触发。</li>
+    <li><strong>无人值守的权限请求。</strong>默认等你处理。自动拒绝、只读自动批准、全部放行都需要按计划显式开启；全部放行被标为危险，因为它确实危险。</li>
+    <li><strong>“已送达”不等于“已完成”。</strong>HTTP 200 只表示 OpenCode 把 prompt 收进了收件箱。执行进度在原生会话或 SSE 里看；队列标记的是投递，不是模型跑完。</li>
+  </ul>
+</div>
+
+<h2 id="compare"><span class="lang-en">How it compares: vs opencode-scheduler and opencode-manager</span><span class="lang-zh" lang="zh-CN">对比：opencode-scheduler 与 opencode-manager</span></h2>
+<div class="lang-en">
+  <p>The point is not feature count. It is one missing primitive: a delayed prompt into a thread that already exists. Both alternatives are reasonable tools with a different centre of gravity.</p>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Dimension</th>
+        <th scope="col">opencode-scheduled-messages</th>
+        <th scope="col">opencode-scheduler</th>
+        <th scope="col">opencode-manager</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">Target session</th>
+        <td>Appends to an existing session, or creates one on request</td>
+        <td>New session per run</td>
+        <td>New session per run</td>
+      </tr>
+      <tr>
+        <th scope="row">Durability</th>
+        <td>SQLite queue, 10-second tick, 120-minute grace, explicit <code>missed</code> state</td>
+        <td>Delegates timing to the OS scheduler; no catch-up policy described</td>
+        <td>Database-backed jobs; cron mode without catch-up</td>
+      </tr>
+      <tr>
+        <th scope="row">Phone UI</th>
+        <td>Mobile-first PWA plus native deep link</td>
+        <td>No UI</td>
+        <td>Web UI</td>
+      </tr>
+      <tr>
+        <th scope="row">Footprint</th>
+        <td>One Node process, 0 runtime dependencies, 148 KB tarball</td>
+        <td>Runs inside OpenCode as a plugin</td>
+        <td>Bun + React + Docker, larger image</td>
+      </tr>
+      <tr>
+        <th scope="row">Unattended permissions</th>
+        <td>Per schedule: wait, reject, read-only, or allow-all</td>
+        <td>Denies questions by default</td>
+        <td>Not its focus</td>
+      </tr>
+      <tr>
+        <th scope="row">Typical use</th>
+        <td>“This thought, in this thread, tonight”</td>
+        <td>“Start a fresh agent on a schedule”</td>
+        <td>“Manage many projects and sessions in one UI”</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <h3>Where the alternatives are better</h3>
+  <ul>
+    <li><strong>opencode-scheduler</strong> keeps the deployment surface to one process: it runs as a plugin inside OpenCode, with no second daemon, no extra port and no separate login to manage. If a new session per run is acceptable, that is simpler.</li>
+    <li><strong>opencode-manager</strong> covers a broader dashboard: many projects, richer session management and a container-first install. If you want one place to manage everything, it does more than this page's single job.</li>
+    <li><strong>Both</strong> are better choices for recurring scheduled runs or multi-user access. Version 0.1 here is one-shot and single-user on purpose; if you need a team service, this is the wrong tool.</li>
+  </ul>
+</div>
+<div class="lang-zh" lang="zh-CN">
+  <p>重点不是功能数量，而是一个缺失的原语：把一条延迟消息送进已经存在的线程。两个替代品都是合理的工具，只是重心不同。</p>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">维度</th>
+        <th scope="col">opencode-scheduled-messages</th>
+        <th scope="col">opencode-scheduler</th>
+        <th scope="col">opencode-manager</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">目标会话</th>
+        <td>追加到已有会话，或按需新建</td>
+        <td>每次运行新建会话</td>
+        <td>每次运行新建会话</td>
+      </tr>
+      <tr>
+        <th scope="row">持久性</th>
+        <td>SQLite 队列，10 秒轮询，120 分钟宽限，显式 <code>missed</code> 状态</td>
+        <td>计时交给系统调度器；没有描述补发策略</td>
+        <td>数据库任务；cron 模式无补发</td>
+      </tr>
+      <tr>
+        <th scope="row">手机界面</th>
+        <td>移动优先 PWA + 原生深链</td>
+        <td>无界面</td>
+        <td>Web 界面</td>
+      </tr>
+      <tr>
+        <th scope="row">体积</th>
+        <td>单个 Node 进程，0 运行时依赖，148 KB 包</td>
+        <td>作为插件跑在 OpenCode 内部</td>
+        <td>Bun + React + Docker，镜像更大</td>
+      </tr>
+      <tr>
+        <th scope="row">无人值守权限</th>
+        <td>按计划选择：等待、拒绝、只读、全部放行</td>
+        <td>默认拒绝提问</td>
+        <td>不是它的重点</td>
+      </tr>
+      <tr>
+        <th scope="row">典型用法</th>
+        <td>“这个想法，这个线程，今晚”</td>
+        <td>“按计划启动一个新 agent”</td>
+        <td>“在一个界面里管很多项目和会话”</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <h3>替代品更好的地方</h3>
+  <ul>
+    <li><strong>opencode-scheduler</strong> 把部署面压缩到一个进程：它作为插件跑在 OpenCode 里面，不需要第二个守护进程、不需要额外端口、也不需要多管一套登录。如果每次运行新建会话可以接受，它更简单。</li>
+    <li><strong>opencode-manager</strong> 覆盖更宽的仪表盘：多项目、更丰富的会话管理、容器优先的安装方式。如果你想要一个地方管所有东西，它做的不止这一页的单一任务。</li>
+    <li><strong>两者</strong>都更适合周期性计划任务或多用户访问。这里的 0.1 刻意做成一次性、单用户；如果你需要团队服务，这个工具就是错的。</li>
+  </ul>
+</div>
+
+<h2 id="deepseek"><span class="lang-en">DeepSeek peak and off-peak: 2× price, official windows</span><span class="lang-zh" lang="zh-CN">DeepSeek 峰时与谷时：2 倍差价，官方时段</span></h2>
+<div class="lang-en">
+  <p>DeepSeek's official API charges half price during off-peak hours. Peak hours are 01:00–04:00 and 06:00–10:00 UTC, Monday to Friday, excluding Chinese public holidays; everything else is off-peak. In Beijing time that is 09:00–12:00 and 14:00–18:00 on weekdays. The peak token price is exactly 2× the off-peak price, so the same tokens cost 50% less off-peak. Source: <a href="https://api-docs.deepseek.com/quick_start/pricing">DeepSeek API pricing</a>.</p>
+  <p>The composer shows whether the chosen time is peak or off-peak. If you use opencode-go, you pay a subscription rather than per token, but the monthly allowance is denominated in dollars: off-peak therefore halves the allowance consumed, not the subscription price. The UI says “谷时 · 半额消耗”, not “save 50%”, because that distinction matters.</p>
+</div>
+<div class="lang-zh" lang="zh-CN">
+  <p>DeepSeek 官方 API 在谷时收一半价钱。峰时是 UTC 周一至周五 01:00–04:00 和 06:00–10:00，中国法定节假日除外；其余时间都是谷时。换成北京时间，就是工作日的 09:00–12:00 和 14:00–18:00。峰时单价正好是谷时的 2 倍，所以同样的 token 在谷时便宜 50%。来源：<a href="https://api-docs.deepseek.com/quick_start/pricing">DeepSeek API 价格页</a>。</p>
+  <p>输入框会提示你选的时间属于峰时还是谷时。如果你用 opencode-go，付的是订阅费而不是按 token 计费，但每月额度以美元计价：谷时省下的是额度消耗，不是订阅价格。所以界面写“谷时 · 半额消耗”，而不是“省 50%”——这个区别很重要。</p>
+</div>
+
+<h2 id="boundaries"><span class="lang-en">Boundaries: not a plugin, not a fork, not multi-user</span><span class="lang-zh" lang="zh-CN">边界：不是插件、不是 fork、不是多用户</span></h2>
+<div class="lang-en">
+  <ul>
+    <li><strong>Not an OpenCode plugin.</strong> OpenCode V2 plugins cannot register HTTP routes or own a durable timer, so the scheduler is a separate process using the public API.</li>
+    <li><strong>Does not fork OpenCode.</strong> No browser automation, no injected scripts, no changes to the native web UI or its database.</li>
+    <li><strong>Single-user.</strong> One gateway, one OpenCode instance, one login password. There are no accounts, roles or tenant isolation.</li>
+    <li><strong>Local by default.</strong> It binds <code>127.0.0.1</code>; <code>--lan</code> is an explicit opt-in. The login password is stored as a scrypt hash, the OpenCode password stays server-side, writes require a matching Origin, and the CSP is <code>default-src 'self'</code>.</li>
+  </ul>
+</div>
+<div class="lang-zh" lang="zh-CN">
+  <ul>
+    <li><strong>不是 OpenCode 插件。</strong>OpenCode V2 插件无法注册 HTTP 路由，也无法持有持久定时器，所以调度器是一个使用公开 API 的独立进程。</li>
+    <li><strong>不 fork OpenCode。</strong>没有浏览器自动化，不注入脚本，不改原生 Web UI 或它的数据库。</li>
+    <li><strong>单用户。</strong>一个网关、一个 OpenCode 实例、一个登录密码。没有账号、角色或租户隔离。</li>
+    <li><strong>默认只在本机。</strong>只绑定 <code>127.0.0.1</code>；<code>--lan</code> 需要显式开启。登录密码以 scrypt 哈希保存，OpenCode 密码始终留在服务端，写操作要求 Origin 匹配，CSP 为 <code>default-src 'self'</code>。</li>
+  </ul>
+</div>
 
 <section class="faq" id="faq" aria-labelledby="faq-heading">
-<h2 id="faq-heading">FAQ: questions people actually type</h2>
-
+<h2 id="faq-heading"><span class="lang-en">FAQ: questions people actually type</span><span class="lang-zh" lang="zh-CN">常见问题：中文用户真实会搜的问法</span></h2>
+<div class="lang-en">
 <h3>Does OpenCode support scheduled messages or cron out of the box?</h3>
 <p>No. OpenCode V2.1 has a durable inbox, but a queued item does not wake itself, so there is no timer. This project adds the timer in a separate Node process and leaves OpenCode itself unchanged.</p>
 
@@ -505,46 +781,108 @@ tailscale serve --bg --https=8443 http://127.0.0.1:4096
 <h3>Is there a recurring or cron-style schedule?</h3>
 <p>Not in 0.1. Schedules are one-shot by design: the use case is this thought, in this thread, tonight. Recurring jobs would spend tokens unattended, so the data model leaves room but the feature is deliberately absent.</p>
 
+<h3>How do I log in the first time, and what if I lose the password?</h3>
+<p>On first start the terminal prints the initial password once; that string is the login credential. Sign in, then change it in Settings, where it is stored as a scrypt hash. If you lose it, reset the credential in the data directory and restart; OpenCode itself is untouched.</p>
+
 <h3>How much memory and disk does it use?</h3>
 <p>A 0.1.0 instance measured 70–110 MB RSS with one SSE connection and peaked near 150 MB; the generated systemd unit caps memory at 192 MB soft and 320 MB hard. The SQLite file lives under ~/.local/share and uses WAL.</p>
+</div>
 
-<h3>Which OpenCode version does it target?</h3>
-<p>OpenCode V2.1's HTTP API, which is still marked experimental. Pin a known OpenCode version and run ocsched doctor after upgrades; a changed API is the most likely source of breakage.</p>
-</section>
-
-<section id="zh" lang="zh-CN" aria-labelledby="zh-heading">
-<h2 id="zh-heading">中文常见问题：OpenCode 定时消息</h2>
-<p>以下问题对应中文用户最常输入的需求句，描述的是同一个 0.1.0 版本，与英文正文一致。</p>
-
+<div class="lang-zh" lang="zh-CN">
 <h3>OpenCode 能定时发消息吗？</h3>
 <p>原生不能。OpenCode V2.1 只有持久收件箱，没有定时器；这个项目用独立的 Node 进程每 10 秒检查一次队列，到点再调用官方 HTTP API，不修改 OpenCode 本身。</p>
 
 <h3>怎么给已有的 OpenCode 会话发消息，而不是新建会话？</h3>
 <p>在 PWA 里选中目标会话，写入内容并选择时间；到点后调用 POST /api/session/{id}/prompt 追加到该会话。新建会话是可选模式，不是默认行为，所以上下文不会丢。</p>
 
-<h3>DeepSeek 错峰真的能省钱吗？</h3>
-<p>按 token 计费时能：谷时单价是峰时的 50%，峰时是 2 倍。官方峰时为 UTC 周一至周五 01:00–04:00 与 06:00–10:00（北京时间 09:00–12:00、14:00–18:00），中国法定节假日除外，详见<a href="https://api-docs.deepseek.com/quick_start/pricing">官方价格页</a>。opencode-go 订阅只减少额度消耗，不降低月费。</p>
-
-<h3>手机上怎么用？一定要装 Tailscale 吗？</h3>
-<p>不一定要。同一 Wi-Fi 下运行 ocsched --lan 就能打开局域网地址；要安装 PWA 或走 HTTPS，再用 Tailscale 或 Cloudflare Tunnel。Tailscale 只是推荐路径，不是运行依赖。</p>
-
-<h3>电脑关机或休眠了，消息还会发吗？</h3>
+<h3>电脑关机或休眠了，到点的消息还会发吗？</h3>
 <p>会尝试补发，但只在 120 分钟宽限内；超过宽限会标记为 missed，等你在界面上手动重发，避免半夜的旧想法在第二天中午突然执行。</p>
 
+<h3>到了发送时间，目标会话还在跑怎么办？</h3>
+<p>默认策略是等它空闲：每 30 秒复查一次，最多等 30 分钟，仍不空闲就标记为 missed。每条计划也可以改选 steer（注入当前回合）或 skip（直接跳过）。</p>
+
+<h3>DeepSeek 错峰真的能省钱吗？</h3>
+<p>按 token 计费时能，谷时单价正好是峰时的一半，峰时是 2 倍。官方峰时为 UTC 周一至周五 01:00–04:00 与 06:00–10:00（北京时间 09:00–12:00、14:00–18:00），中国法定节假日除外，详见<a href="https://api-docs.deepseek.com/quick_start/pricing">官方价格页</a>。opencode-go 订阅只减少额度消耗，不降低月费。</p>
+
 <h3>它是 OpenCode 插件吗？需要改 OpenCode 吗？</h3>
-<p>不是插件，也不 fork OpenCode。它不注入脚本、不改原生界面，只作为单用户进程调用公开 API；一个网关、一个 OpenCode 实例、一个访问令牌。</p>
+<p>不是插件，也不 fork OpenCode。它不注入脚本、不改原生界面，只作为单用户进程调用公开 API；一个网关、一个 OpenCode 实例、一个登录密码。</p>
+
+<h3>手机上怎么用？一定要装 Tailscale 吗？</h3>
+<p>不一定要。同一 Wi-Fi 下运行 ocsched --lan 就能打开局域网地址；要安装 PWA 或走 HTTPS，再把 Tailscale 或 Cloudflare Tunnel 放在前面。Tailscale 只是推荐路径，不是运行依赖。</p>
 
 <h3>支持循环任务（cron）吗？</h3>
 <p>0.1 不支持，只有一次性定时。循环任务会在无人看守时持续消耗 token，因此被刻意留到后续版本，而不是做成一个默认开启的开关。</p>
+
+<h3>第一次登录的密码是什么？忘了怎么办？</h3>
+<p>首次启动时终端只打印一次初始密码，那串就是登录凭据；登录后在 Settings 里改成自己的密码，服务端以 scrypt 哈希保存，明文不落盘。忘记后可以在数据目录里重置凭据再重启，不需要改 OpenCode。</p>
+
+<h3>它占用多少内存和磁盘？</h3>
+<p>0.1.0 实测空闲时 RSS 70–110 MB，在一条 SSE 连接下峰值接近 150 MB；生成的 systemd 单元把内存限制在软 192 MB、硬 320 MB。SQLite 文件在 ~/.local/share 下，使用 WAL 模式。</p>
+</div>
 </section>
 
 <footer>
-  <p><strong>opencode-scheduled-messages</strong> v0.1.0 · last updated 2026-10-26 · License: <a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/LICENSE">PolyForm Noncommercial License 1.0.0</a> · Author and maintainer: EaveBounty.</p>
-  <p>Repository: <a href="https://github.com/EaveBounty/opencode-scheduled-messages">EaveBounty/opencode-scheduled-messages</a> · npm: <a href="https://www.npmjs.com/package/opencode-scheduled-messages">opencode-scheduled-messages</a> · Machine-readable summary: <a href="./llms.txt">llms.txt</a> · <a href="./sitemap.xml">sitemap</a></p>
-  <p>This page is one HTML file with no external CSS, JavaScript, fonts or images. It renders offline and prints without navigation.</p>
+  <div class="lang-en">
+    <p><strong>opencode-scheduled-messages</strong> v0.1.0 · last updated 2026-10-26 · License: <a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/LICENSE">PolyForm Noncommercial License 1.0.0</a> · Author and maintainer: EaveBounty.</p>
+    <p>Repository: <a href="https://github.com/EaveBounty/opencode-scheduled-messages">EaveBounty/opencode-scheduled-messages</a> · npm: <a href="https://www.npmjs.com/package/opencode-scheduled-messages">opencode-scheduled-messages</a> · Machine-readable summary: <a href="./llms.txt">llms.txt</a> · <a href="./sitemap.xml">sitemap</a></p>
+    <p>This page is one HTML file with no external CSS, JavaScript, fonts or images. It renders offline and prints without navigation. English and Chinese live in the same file; the switch keeps the URL and the anchor.</p>
+  </div>
+  <div class="lang-zh" lang="zh-CN">
+    <p><strong>opencode-scheduled-messages</strong> v0.1.0 · 更新于 2026-10-26 · 许可证：<a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/LICENSE">PolyForm Noncommercial License 1.0.0</a> · 作者与维护者：EaveBounty。</p>
+    <p>仓库：<a href="https://github.com/EaveBounty/opencode-scheduled-messages">EaveBounty/opencode-scheduled-messages</a> · npm：<a href="https://www.npmjs.com/package/opencode-scheduled-messages">opencode-scheduled-messages</a> · 机器可读摘要：<a href="./llms.txt">llms.txt</a> · <a href="./sitemap.xml">sitemap</a></p>
+    <p>整页是一个 HTML 文件，没有外部 CSS、JavaScript、字体或图片，可离线阅读、可直接打印。中英文在同一文件内，切换语言不会丢失 URL 和锚点。</p>
+  </div>
 </footer>
 
 </article>
 </main>
+
+<script>
+/* Wiring: buttons, aria-pressed, title/description, ?lang= in the URL. */
+(function () {
+  var root = document.documentElement;
+  var KEY = "ocsched-lang";
+  var META = {
+    en: {
+      title: "opencode-scheduled-messages: prompt an existing OpenCode session",
+      desc: "Schedule a message into an existing OpenCode V2 session. Self-hosted Node + SQLite queue, zero runtime dependencies, mobile PWA, DeepSeek off-peak aware. Bilingual EN/中文."
+    },
+    zh: {
+      title: "OpenCode 定时消息：给已有会话定时发消息 | opencode-scheduled-messages",
+      desc: "给已有的 OpenCode V2 会话定时发消息：自托管 Node + SQLite 队列，零运行时依赖，手机 PWA，支持 DeepSeek 谷时发送。中英双语。"
+    }
+  };
+  var buttons = document.querySelectorAll(".lang-switch button");
+  var desc = document.querySelector('meta[name="description"]');
+
+  function paint(lang) {
+    root.setAttribute("data-lang", lang);
+    root.setAttribute("lang", lang === "zh" ? "zh-CN" : "en");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute("aria-pressed", buttons[i].getAttribute("data-lang-set") === lang ? "true" : "false");
+    }
+    document.title = META[lang].title;
+    if (desc) { desc.setAttribute("content", META[lang].desc); }
+  }
+
+  function select(lang) {
+    paint(lang);
+    try { localStorage.setItem(KEY, lang); } catch (e) {}
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.set("lang", lang);
+      history.replaceState(null, "", url.pathname + url.search + url.hash);
+    } catch (e) {}
+  }
+
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener("click", function () {
+      select(this.getAttribute("data-lang-set") === "zh" ? "zh" : "en");
+    });
+  }
+
+  paint(root.getAttribute("data-lang") === "zh" ? "zh" : "en");
+})();
+</script>
 </body>
 </html>

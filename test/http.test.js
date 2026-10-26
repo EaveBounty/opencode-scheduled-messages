@@ -6,6 +6,7 @@ import { Store } from "../src/store.js";
 import { OpenCodeClient } from "../src/opencode.js";
 import { createApp } from "../src/http.js";
 import { tokenHash } from "../src/config.js";
+import { hashPassword, verifyPassword } from "../src/util.js";
 
 const TOKEN = "test-token";
 
@@ -123,6 +124,30 @@ test("login sets a cookie that authenticates subsequent requests", async () => {
   const status = await fetch(`${ctx.base}/api/auth/status`, { headers: { cookie: cookie.split(";")[0] } });
   const payload = await status.json();
   assert.equal(payload.authenticated, true);
+  await ctx.close();
+});
+
+test("changes a legacy token into a scrypt password", async () => {
+  const ctx = await setup();
+  assert.equal(verifyPassword("new-password-123", hashPassword("new-password-123")), true);
+  const change = await fetch(`${ctx.base}/api/auth/password`, {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ currentPassword: TOKEN, newPassword: "new-password-123" }),
+  });
+  assert.equal(change.status, 200);
+  const oldLogin = await fetch(`${ctx.base}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: TOKEN }),
+  });
+  assert.equal(oldLogin.status, 401);
+  const newLogin = await fetch(`${ctx.base}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: "new-password-123" }),
+  });
+  assert.equal(newLogin.status, 200);
   await ctx.close();
 });
 

@@ -5,15 +5,17 @@ import { fileURLToPath } from "node:url";
 import {
   base64url,
   fromIso,
+  hashPassword,
   hmac,
   isValidTimezone,
   log,
   newMessageID,
   newScheduleID,
+  randomToken,
   safeEqual,
   VERSION,
 } from "./util.js";
-import { persistConfig, tokenHash as hashToken } from "./config.js";
+import { persistConfig, verifySecret } from "./config.js";
 import { OpenCodeError } from "./opencode.js";
 import { messageView, scheduleView } from "./serialize.js";
 import { STATES } from "./store.js";
@@ -191,7 +193,7 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
     const header = String(req.headers.authorization || "");
     if (header.startsWith("Bearer ")) {
       const token = header.slice(7).trim();
-      if (safeEqual(hashToken(token), config.auth.tokenHash)) return { ok: true, via: "bearer" };
+      if (verifySecret(config, token)) return { ok: true, via: "bearer" };
     }
     const cookies = parseCookies(req.headers.cookie);
     const value = cookies[config.auth.cookieName];
@@ -279,9 +281,9 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
     if (!loginAllowed(ip)) throw new HttpError(429, "rate_limited", "Too many login attempts");
     const body = await readJson(req);
     const token = String(body.token || "");
-    if (!token || !safeEqual(hashToken(token), config.auth.tokenHash)) {
+    if (!token || !verifySecret(config, token)) {
       recordLoginFailure(ip);
-      throw new HttpError(401, "invalid_token", "Invalid access token");
+      throw new HttpError(401, "invalid_token", "Invalid password");
     }
     loginAttempts.delete(ip);
     setSessionCookie(req, res);
@@ -290,6 +292,23 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
 
   route("POST", "/api/auth/logout", async ({ res }) => {
     clearSessionCookie(res);
+    sendJson(res, 200, { ok: true });
+  });
+
+  route("POST", "/api/auth/password", async ({ req, res }) => {
+    const body = await readJson(req);
+    const current = String(body.currentPassword || "");
+    const next = String(body.newPassword || "");
+    if (!verifySecret(config, current)) {
+      throw new HttpError(401, "invalid_password", "Current password is incorrect");
+    }
+    if (next.length < 8) bad("New password must be at least 8 characters");
+    if (next.length > 1024) bad("New password is too long");
+    config.auth.passwordHash = hashPassword(next);
+    config.auth.tokenHash = null;
+    config.auth.cookieSecret = randomToken(32);
+    await persistConfig(paths, config);
+    setSessionCookie(req, res);
     sendJson(res, 200, { ok: true });
   });
 

@@ -23,7 +23,7 @@ Initial release.
 - Server-side Basic auth injection; access-token login; CSRF origin checks; CSP.
 - `ocsched doctor`, `ocsched service print|install`, systemd unit with memory caps.
 - DeepSeek peak/off-peak hint (official UTC windows).
-- 39 tests with a fake OpenCode client; no network or LLM calls.
+- 40 tests with a fake OpenCode client; no network or LLM calls.
 
 ### Hardening
 
@@ -35,6 +35,12 @@ Initial release.
 - Mobile sheet survives live re-renders, traps focus, restores focus on close, and moves above the iOS keyboard.
 - Bump `RestrictAddressFamilies` with `AF_NETLINK` so `os.networkInterfaces()` works inside the hardened systemd unit; interface enumeration no longer crashes startup.
 - `--rotate-token` rotates and exits instead of trying to bind a second server; restart the service to apply it.
+- Initial random password is printed once; it can be changed to a human-chosen password in Settings (scrypt, invalidates other sessions).
+
+### Documentation
+
+- README is Chinese by default; English moves to `README.en.md` with a language switch.
+- GitHub Pages landing page auto-switches English/Chinese from `?lang`, stored preference, then `navigator.language`.
 
 ### Known limitations
 

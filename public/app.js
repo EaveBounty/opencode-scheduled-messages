@@ -103,10 +103,14 @@ async function api(path, { method = "GET", body } = {}) {
     payload = null;
   }
   if (response.status === 401) {
+    const code = payload?.error?.code;
+    if (code === "invalid_token" || code === "invalid_password") {
+      throw new Error(code);
+    }
     state.authed = false;
     if (!path.includes("/api/auth/login")) {
       closeSheet();
-      renderLogin("登录已过期，请重新输入访问令牌");
+      renderLogin("登录已过期，请重新输入密码");
     }
     throw new Error("unauthorized");
   }
@@ -768,6 +772,30 @@ function renderSettings() {
         </section>
 
         <section class="card">
+          <h2 style="margin-bottom:8px">修改密码</h2>
+          <p class="small muted" style="margin:0 0 12px">
+            首次启动的初始密码只打印一次；如果是 agent 替你部署，应该由它私下转告你，并在登录后改掉。
+          </p>
+          <form id="password-form" class="stack">
+            <div class="field">
+              <label for="password-current">当前密码</label>
+              <input class="input" id="password-current" type="password" autocomplete="current-password" />
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="password-new">新密码（至少 8 位）</label>
+                <input class="input" id="password-new" type="password" autocomplete="new-password" minlength="8" />
+              </div>
+              <div class="field">
+                <label for="password-confirm">再输一次</label>
+                <input class="input" id="password-confirm" type="password" autocomplete="new-password" minlength="8" />
+              </div>
+            </div>
+            <button class="btn primary" type="submit">更新密码</button>
+          </form>
+        </section>
+
+        <section class="card">
           <h2 style="margin-bottom:8px">安装与访问</h2>
           <p class="small muted" style="margin:0 0 12px">
             手机通过 HTTPS 打开本页后可“添加到主屏幕”。局域网 HTTP 可用，但无法注册 Service Worker。
@@ -1372,14 +1400,14 @@ function renderLogin(error = "") {
         <p>把高峰期的想法排到低峰时段，自动发进指定的 OpenCode 会话。</p>
         <form id="login-form">
           <div class="field">
-            <label for="token">访问令牌</label>
-            <input class="input" id="token" type="password" autocomplete="current-password" placeholder="ocsched 首次启动时打印的 token" autofocus />
+            <label for="token">密码</label>
+            <input class="input" id="token" type="password" autocomplete="current-password" placeholder="首次部署时给出的初始密码" autofocus />
           </div>
           <div class="login-error" id="login-error">${esc(error)}</div>
           <button class="btn primary block" type="submit">进入</button>
         </form>
         <div class="field-hint" style="margin-top:14px">
-          令牌只保存在本机配置里；忘记了就在终端运行 <code>ocsched --rotate-token</code>。
+          首次启动会打印一次初始密码；登录后在「设置 → 修改密码」改成你自己的密码。忘记可在终端运行 <code>ocsched --rotate-token</code>，然后重启服务。
         </div>
       </div>
     </div>`;
@@ -1398,7 +1426,12 @@ async function login(token) {
     route();
   } catch (err) {
     const error = document.getElementById("login-error");
-    if (error) error.textContent = err.message === "unauthorized" ? "令牌不正确" : err.message;
+    if (error) {
+      error.textContent =
+        err.message === "invalid_token" || err.message === "unauthorized"
+          ? "密码不正确"
+          : err.message;
+    }
   }
 }
 
@@ -1605,6 +1638,31 @@ app.addEventListener("submit", (event) => {
         return loadAll().then(() => render());
       })
       .catch((error) => toast(error.message, "error"));
+    return;
+  }
+  if (event.target.id === "password-form") {
+    const currentPassword = document.getElementById("password-current")?.value || "";
+    const newPassword = document.getElementById("password-new")?.value || "";
+    const confirm = document.getElementById("password-confirm")?.value || "";
+    if (newPassword.length < 8) {
+      toast("新密码至少 8 位", "error");
+      return;
+    }
+    if (newPassword !== confirm) {
+      toast("两次输入的新密码不一致", "error");
+      return;
+    }
+    api("/api/auth/password", {
+      method: "POST",
+      body: { currentPassword, newPassword },
+    })
+      .then(() => {
+        toast("密码已更新");
+        event.target.reset();
+      })
+      .catch((error) =>
+        toast(error.message === "invalid_password" ? "当前密码不正确" : error.message, "error"),
+      );
   }
 });
 

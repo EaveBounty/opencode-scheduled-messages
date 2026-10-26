@@ -35,7 +35,7 @@ There are **no runtime dependencies**. `node:sqlite` is the only experimental AP
 ### 3.1 Browser → gateway
 
 1. `GET /` serves `public/index.html` with a strict CSP (`script-src 'self'`).
-2. Login posts the one-time token to `/api/auth/login`. The gateway compares `sha256("ocsm:" + token)` in constant time and sets `ocsm_session=<exp>.<hmac>` (`HttpOnly; SameSite=Strict; Secure` when HTTPS).
+2. Login posts the password to `/api/auth/login`. The gateway verifies a scrypt hash (and a legacy token SHA-256 hash, if present) and sets `ocsm_session=<exp>.<hmac>` (`HttpOnly; SameSite=Strict; Secure` when HTTPS). The initial password is printed once; it can be changed in Settings.
 3. Every other `/api/*` route requires the cookie or `Authorization: Bearer <token>`.
 4. Cookie-authenticated writes also require `Origin` to match `Host` / `X-Forwarded-Host` / configured public URL. This is the CSRF boundary; no separate CSRF token is needed with `SameSite=Strict`.
 5. The browser never sees the OpenCode password. The gateway injects `Basic base64("opencode:" + password)` on the server side.

@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual, createHmac } from "node:crypto";
+import { randomBytes, timingSafeEqual, createHmac, scryptSync } from "node:crypto";
 
 export const VERSION = "0.1.0";
 
@@ -35,6 +35,26 @@ export function hmac(secret, value) {
 
 export function randomToken(bytes = 32) {
   return randomBytes(bytes).toString("base64url");
+}
+
+/** Hash a human-chosen password with scrypt. Format: scrypt$salt$hash. */
+export function hashPassword(password) {
+  const salt = randomBytes(16).toString("base64url");
+  const hash = scryptSync(String(password), salt, 64, { N: 16384, r: 8, p: 1 }).toString("base64url");
+  return `scrypt$${salt}$${hash}`;
+}
+
+export function verifyPassword(password, stored) {
+  if (typeof stored !== "string") return false;
+  const [scheme, salt, hash] = stored.split("$");
+  if (scheme !== "scrypt" || !salt || !hash) return false;
+  try {
+    const expected = Buffer.from(hash, "base64url");
+    const actual = scryptSync(String(password), salt, expected.length, { N: 16384, r: 8, p: 1 });
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
 }
 
 /** URL-safe base64 of a UTF-8 string, without padding. */

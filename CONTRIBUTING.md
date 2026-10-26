@@ -15,7 +15,7 @@ Thanks for helping. This project is deliberately small; the bar for new runtime 
 ```bash
 git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
 cd opencode-scheduled-messages
-npm test                 # 39 tests, no network
+npm test                 # 40 tests, no network
 node bin/ocsched.js --help
 ```
 
@@ -44,7 +44,7 @@ Checklist:
 - [ ] New HTTP route has auth + Origin behavior covered.
 - [ ] New UI text is in Chinese (English brand names are fine).
 - [ ] Empty, loading, error and offline states exist.
-- [ ] `README.md` and `README.zh-CN.md` updated if behavior changed.
+- [ ] `README.md` and `README.en.md` updated if behavior changed.
 - [ ] `CHANGELOG.md` has one line under `Unreleased`.
 
 ## Commit style
