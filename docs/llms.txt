@@ -4,7 +4,7 @@
 
 Canonical page: https://eavebounty.github.io/opencode-scheduled-messages/
 Repository: https://github.com/EaveBounty/opencode-scheduled-messages
-npm: https://www.npmjs.com/package/opencode-scheduled-messages
+npm: pending publication
 Version: 0.1.0 (2026-10-26)
 License: PolyForm Noncommercial License 1.0.0
 
@@ -35,7 +35,11 @@ License: PolyForm Noncommercial License 1.0.0
 
 ## Install
 
-    npx opencode-scheduled-messages
+    git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
+    cd opencode-scheduled-messages
+    node bin/ocsched.js
+
+npm release pending; after publication: npx opencode-scheduled-messages
 
 Requires Node.js >= 22.6.0 and a running OpenCode V2 server. The first start
 prints a one-time initial password; sign in with it, then change it in Settings

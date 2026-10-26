@@ -4,10 +4,9 @@
 
 [![English](https://img.shields.io/badge/README-English-2f4ce0)](README.en.md) [![中文](https://img.shields.io/badge/README-中文-6b7488)](README.md)
 
-[Website](https://eavebounty.github.io/opencode-scheduled-messages/) · [npm](https://www.npmjs.com/package/opencode-scheduled-messages) · [Architecture](docs/ARCHITECTURE.md) · [Deploy](docs/DEPLOY.md)
+[Website](https://eavebounty.github.io/opencode-scheduled-messages/) · [Architecture](docs/ARCHITECTURE.md) · [Deploy](docs/DEPLOY.md)
 
 [![CI](https://github.com/EaveBounty/opencode-scheduled-messages/actions/workflows/ci.yml/badge.svg)](https://github.com/EaveBounty/opencode-scheduled-messages/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/opencode-scheduled-messages.svg)](https://www.npmjs.com/package/opencode-scheduled-messages)
 [![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D22.6-339933.svg)](https://nodejs.org)
 
@@ -69,12 +68,14 @@ Requirements: **Node.js ≥ 22.6** and a running **OpenCode V2** server.
 # 1. Start OpenCode's server if it is not already running.
 opencode serve --service          # usually already active as opencode.service
 
-# 2. Start the scheduler.
-npx opencode-scheduled-messages
+# 2. Start the scheduler (npm release pending; run from source for now).
+git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
+cd opencode-scheduled-messages
+node bin/ocsched.js
 
-# Or install it globally:
-npm install -g opencode-scheduled-messages
-ocsched
+# After the npm release:
+# npx opencode-scheduled-messages
+# npm install -g opencode-scheduled-messages && ocsched
 ```
 
 On first run it prints a one-time **initial password**:

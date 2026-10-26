@@ -379,7 +379,7 @@
 
 <div class="lang-en">
   <div class="actions">
-    <a class="cta" href="https://www.npmjs.com/package/opencode-scheduled-messages">Install from npm</a>
+    <a class="cta" href="https://github.com/EaveBounty/opencode-scheduled-messages">Get the code</a>
     <a class="cta ghost" href="https://github.com/EaveBounty/opencode-scheduled-messages">Source on GitHub</a>
     <a class="cta ghost" href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/DEPLOY.md">Deployment guide</a>
   </div>
@@ -406,7 +406,7 @@
 
 <div class="lang-zh" lang="zh-CN">
   <div class="actions">
-    <a class="cta" href="https://www.npmjs.com/package/opencode-scheduled-messages">从 npm 安装</a>
+    <a class="cta" href="https://github.com/EaveBounty/opencode-scheduled-messages">获取源码</a>
     <a class="cta ghost" href="https://github.com/EaveBounty/opencode-scheduled-messages">GitHub 源码</a>
     <a class="cta ghost" href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/docs/DEPLOY.md">部署指南</a>
   </div>
@@ -456,7 +456,7 @@
       <tr>
         <th scope="row">npm tarball</th>
         <td>148 KB packed, 325 KB unpacked, 28 files</td>
-        <td>Measured with <code>npm pack</code>; verify on the <a href="https://www.npmjs.com/package/opencode-scheduled-messages">npm listing</a>.</td>
+        <td>Measured with <code>npm pack</code>; npm publication is pending.</td>
       </tr>
       <tr>
         <th scope="row">Test suite</th>
@@ -505,7 +505,7 @@
       <tr>
         <th scope="row">npm 包体</th>
         <td>压缩 148 KB，解包 325 KB，共 28 个文件</td>
-        <td>用 <code>npm pack</code> 实测，可在 <a href="https://www.npmjs.com/package/opencode-scheduled-messages">npm 页面</a>复核。</td>
+        <td>用 <code>npm pack</code> 实测；npm 发布待定。</td>
       </tr>
       <tr>
         <th scope="row">测试</th>
@@ -554,7 +554,10 @@
 opencode serve --service
 
 # 2. Start the scheduler (prints the initial password once)
-npx opencode-scheduled-messages
+#    npm release pending; run from source for now:
+git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
+cd opencode-scheduled-messages
+node bin/ocsched.js
 
 # 3. Open the PWA, sign in with the initial password,
 #    pick a session and a time
@@ -574,7 +577,10 @@ tailscale serve --bg --https=8443 http://127.0.0.1:4096
 opencode serve --service
 
 # 2. 启动调度器（首次启动会打印一次初始密码）
-npx opencode-scheduled-messages
+#    npm 包尚未发布；先从源码运行：
+git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
+cd opencode-scheduled-messages
+node bin/ocsched.js
 
 # 3. 打开 PWA，用初始密码登录，选会话和时间
 #    http://127.0.0.1:8788
@@ -824,12 +830,12 @@ tailscale serve --bg --https=8443 http://127.0.0.1:4096
 <footer>
   <div class="lang-en">
     <p><strong>opencode-scheduled-messages</strong> v0.1.0 · last updated 2026-10-26 · License: <a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/LICENSE">PolyForm Noncommercial License 1.0.0</a> · Author and maintainer: EaveBounty.</p>
-    <p>Repository: <a href="https://github.com/EaveBounty/opencode-scheduled-messages">EaveBounty/opencode-scheduled-messages</a> · npm: <a href="https://www.npmjs.com/package/opencode-scheduled-messages">opencode-scheduled-messages</a> · Machine-readable summary: <a href="./llms.txt">llms.txt</a> · <a href="./sitemap.xml">sitemap</a></p>
+    <p>Repository: <a href="https://github.com/EaveBounty/opencode-scheduled-messages">EaveBounty/opencode-scheduled-messages</a> · npm: pending · Machine-readable summary: <a href="./llms.txt">llms.txt</a> · <a href="./sitemap.xml">sitemap</a></p>
     <p>This page is one HTML file with no external CSS, JavaScript, fonts or images. It renders offline and prints without navigation. English and Chinese live in the same file; the switch keeps the URL and the anchor.</p>
   </div>
   <div class="lang-zh" lang="zh-CN">
     <p><strong>opencode-scheduled-messages</strong> v0.1.0 · 更新于 2026-10-26 · 许可证：<a href="https://github.com/EaveBounty/opencode-scheduled-messages/blob/main/LICENSE">PolyForm Noncommercial License 1.0.0</a> · 作者与维护者：EaveBounty。</p>
-    <p>仓库：<a href="https://github.com/EaveBounty/opencode-scheduled-messages">EaveBounty/opencode-scheduled-messages</a> · npm：<a href="https://www.npmjs.com/package/opencode-scheduled-messages">opencode-scheduled-messages</a> · 机器可读摘要：<a href="./llms.txt">llms.txt</a> · <a href="./sitemap.xml">sitemap</a></p>
+    <p>仓库：<a href="https://github.com/EaveBounty/opencode-scheduled-messages">EaveBounty/opencode-scheduled-messages</a> · npm：待发布 · 机器可读摘要：<a href="./llms.txt">llms.txt</a> · <a href="./sitemap.xml">sitemap</a></p>
     <p>整页是一个 HTML 文件，没有外部 CSS、JavaScript、字体或图片，可离线阅读、可直接打印。中英文在同一文件内，切换语言不会丢失 URL 和锚点。</p>
   </div>
 </footer>

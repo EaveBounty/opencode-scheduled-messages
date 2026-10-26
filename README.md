@@ -53,12 +53,14 @@ OpenCode V2 有完整的 HTTP API，但没有 cron 或延时发送。现有工�
 # 1. 确认 OpenCode 服务在跑
 opencode serve --service        # 通常已由 opencode.service 托管
 
-# 2. 启动调度器
-npx opencode-scheduled-messages
+# 2. 启动调度器（npm 包尚未发布；先从源码运行）
+git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
+cd opencode-scheduled-messages
+node bin/ocsched.js
 
-# 或全局安装
-npm install -g opencode-scheduled-messages
-ocsched
+# npm 发布后也可以：
+# npx opencode-scheduled-messages
+# npm install -g opencode-scheduled-messages && ocsched
 ```
 
 首次启动会打印一次性**初始密码**：
