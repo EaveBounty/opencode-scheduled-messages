@@ -186,6 +186,30 @@ test("creates, lists, edits and cancels a schedule", async () => {
   await ctx.close();
 });
 
+test("keeps new-session title and model variant", async () => {
+  const ctx = await setup();
+  const create = await fetch(`${ctx.base}/api/schedules`, {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({
+      text: "new session",
+      dueAt: Date.now() + 3_600_000,
+      target: { kind: "new", directory: "/tmp/test", title: "Night idea" },
+      model: { providerID: "opencode-go", id: "deepseek-v4.1-flash", variant: "high" },
+      timezone: "Asia/Shanghai",
+    }),
+  });
+  assert.equal(create.status, 201);
+  const created = (await create.json()).data;
+  assert.equal(created.target.title, "Night idea");
+  assert.deepEqual(created.target.model, {
+    providerID: "opencode-go",
+    id: "deepseek-v4.1-flash",
+    variant: "high",
+  });
+  await ctx.close();
+});
+
 test("rejects invalid payloads and past dates", async () => {
   const ctx = await setup();
   const noText = await fetch(`${ctx.base}/api/schedules`, {

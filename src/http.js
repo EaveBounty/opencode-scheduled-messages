@@ -565,6 +565,7 @@ export function createApp({ config, paths, store, client, scheduler, eventhub, v
     } else {
       directory = String(target.directory || "").trim();
       if (!directory.startsWith("/")) bad("target.directory must be an absolute path");
+      if (!title && target.title) title = String(target.title).slice(0, 200);
       if (!title) title = null;
     }
 

@@ -185,6 +185,297 @@ function modelLabel(model) {
   return `${model.id || model.modelID || "?"}${model.variant ? `#${model.variant}` : ""}`;
 }
 
+const PROVIDER_ORDER = ["opencode-go", "opencode", "openrouter", "ollama"];
+const PROVIDER_LABELS = {
+  "opencode-go": "OpenCode Go",
+  opencode: "OpenCode",
+  openrouter: "OpenRouter",
+  ollama: "Ollama",
+};
+const VARIANT_LABELS = {
+  none: "不思考",
+  minimal: "极低",
+  low: "低",
+  medium: "中",
+  high: "高",
+  xhigh: "极高",
+  max: "最大",
+  thinking: "思考",
+};
+
+function providerLabel(providerID) {
+  return PROVIDER_LABELS[providerID] || providerID;
+}
+
+function variantLabel(variant) {
+  return VARIANT_LABELS[variant] || variant || "默认";
+}
+
+function modelDisplayName(model) {
+  return model?.name || model?.id || "未命名模型";
+}
+
+function normalizeModel(model) {
+  if (!model || typeof model !== "object" || !model.providerID || !model.id) return null;
+  return {
+    providerID: String(model.providerID),
+    id: String(model.id),
+    variant: model.variant ? String(model.variant) : "",
+  };
+}
+
+function modelGroups() {
+  const groups = new Map();
+  for (const model of state.models || []) {
+    if (!model.enabled || model.status !== "active") continue;
+    if (!groups.has(model.providerID)) groups.set(model.providerID, []);
+    groups.get(model.providerID).push(model);
+  }
+  return [...groups.entries()]
+    .map(([providerID, models]) => ({
+      providerID,
+      models: models.sort((a, b) => modelDisplayName(a).localeCompare(modelDisplayName(b))),
+    }))
+    .sort((a, b) => {
+      const ai = PROVIDER_ORDER.indexOf(a.providerID);
+      const bi = PROVIDER_ORDER.indexOf(b.providerID);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.providerID.localeCompare(b.providerID);
+    });
+}
+
+function selectedSheetModel(sheet) {
+  if (!sheet?.model?.providerID || !sheet?.model?.id) return null;
+  return (
+    (state.models || []).find(
+      (model) => model.providerID === sheet.model.providerID && model.id === sheet.model.id,
+    ) || null
+  );
+}
+
+function modelSearchText(model) {
+  const variants = (model.variants || []).map((variant) => `${variant.id} ${variantLabel(variant.id)}`);
+  return `${modelDisplayName(model)} ${model.id} ${model.providerID} ${providerLabel(model.providerID)} ${variants.join(" ")}`.toLowerCase();
+}
+
+function variantChipsHTML(model, selectedVariant) {
+  const variants = model.variants || [];
+  if (!variants.length) return "";
+  return [
+    `<button type="button" class="variant-chip ${selectedVariant === "" ? "active" : ""}" data-action="model-variant" data-provider="${esc(model.providerID)}" data-model="${esc(model.id)}" data-variant="">默认</button>`,
+    ...variants.map(
+      (variant) =>
+        `<button type="button" class="variant-chip ${selectedVariant === variant.id ? "active" : ""}" data-action="model-variant" data-provider="${esc(model.providerID)}" data-model="${esc(model.id)}" data-variant="${esc(variant.id)}">${esc(variantLabel(variant.id))}</button>`,
+    ),
+  ].join("");
+}
+
+function modelTreeHTML(selected) {
+  return modelGroups()
+    .map((group) => {
+      const groupSelected = selected?.providerID === group.providerID;
+      return `<details class="model-provider" data-provider="${esc(group.providerID)}" data-total="${group.models.length}" data-default-open="${groupSelected ? "1" : "0"}" ${groupSelected ? "open" : ""}>
+        <summary>
+          <span class="provider-name">${esc(providerLabel(group.providerID))}</span>
+          <span class="provider-count">${group.models.length}</span>
+          <span class="provider-selected" ${groupSelected ? "" : "hidden"}>${icon("check", 12)}</span>
+        </summary>
+        <div class="model-list">
+          ${group.models
+            .map((model) => {
+              const isSelected =
+                selected?.providerID === model.providerID && selected?.id === model.id;
+              const variant = isSelected ? state.sheet?.model?.variant || "" : "";
+              const hasVariants = Boolean(model.variants?.length);
+              return `<div class="model-option ${isSelected ? "selected" : ""}" data-provider="${esc(model.providerID)}" data-model="${esc(model.id)}" data-search="${esc(modelSearchText(model))}">
+                <button type="button" class="model-choice" data-action="model-select" data-provider="${esc(model.providerID)}" data-model="${esc(model.id)}">
+                  <span class="model-choice-copy">
+                    <span class="model-name">${esc(modelDisplayName(model))}</span>
+                    <span class="model-id">${esc(model.id)}</span>
+                  </span>
+                  <span class="model-choice-meta">
+                    ${hasVariants ? `<span class="model-variant-count">${model.variants.length} 档</span>` : ""}
+                    <span class="model-check" ${isSelected ? "" : "hidden"}>${icon("check", 14)}</span>
+                  </span>
+                </button>
+                ${isSelected && hasVariants ? `<div class="model-variants">${variantChipsHTML(model, variant)}</div>` : ""}
+              </div>`;
+            })
+            .join("")}
+        </div>
+      </details>`;
+    })
+    .join("");
+}
+
+function renderModelPicker(sheet) {
+  const selected = selectedSheetModel(sheet);
+  const variant = sheet.model?.variant || "";
+  const variantText = !selected
+    ? "选择提供商、模型和思考深度"
+    : !selected.variants?.length
+      ? `${providerLabel(selected.providerID)} · 无思考档位`
+      : `${providerLabel(selected.providerID)} · ${variant ? `思考：${variantLabel(variant)}` : "默认思考深度"}`;
+  const ready = Boolean(state.models);
+  const total = (state.models || []).filter((model) => model.enabled && model.status === "active").length;
+  return `<div class="model-picker" id="model-picker">
+    <div class="model-current">
+      <div class="model-current-copy">
+        <span class="model-current-label">当前选择</span>
+        <strong id="model-current-name">${esc(selected ? modelDisplayName(selected) : ready ? "默认模型" : "正在读取模型…")}</strong>
+        <span id="model-current-detail">${esc(variantText)}</span>
+      </div>
+      <button type="button" class="btn small" data-action="toggle-model-picker" aria-expanded="false" ${ready ? "" : "disabled"}>选择模型</button>
+    </div>
+    <div class="model-picker-body" id="model-picker-body" hidden>
+      <div class="model-search">
+        ${icon("search", 15)}
+        <input class="input" id="model-search" type="search" placeholder="搜索模型、提供商或思考深度…" autocomplete="off" aria-label="搜索模型" />
+        <span class="model-match-count" id="model-match-count">${total} 个可用模型</span>
+      </div>
+      <div class="model-tree" id="model-tree">${ready ? modelTreeHTML(sheet.model) : ""}</div>
+    </div>
+  </div>`;
+}
+
+function filterModelPicker(query = "") {
+  const needle = String(query || "").trim().toLowerCase();
+  const countEl = document.getElementById("model-match-count");
+  let total = 0;
+  for (const group of document.querySelectorAll("#model-tree .model-provider")) {
+    const options = [...group.querySelectorAll(".model-option")];
+    let matches = 0;
+    for (const option of options) {
+      const match = !needle || (option.dataset.search || "").includes(needle);
+      option.hidden = !match;
+      if (match) matches += 1;
+    }
+    group.hidden = matches === 0;
+    if (needle) group.open = matches > 0;
+    else group.open = group.dataset.defaultOpen === "1";
+    const count = group.querySelector(".provider-count");
+    if (count) count.textContent = needle ? `${matches}/${group.dataset.total}` : group.dataset.total;
+    total += matches;
+  }
+  if (countEl) countEl.textContent = needle ? `${total} 个匹配` : `${total} 个可用模型`;
+}
+
+function updateModelSummary() {
+  const sheet = state.sheet;
+  if (!sheet) return;
+  const selected = selectedSheetModel(sheet);
+  const name = document.getElementById("model-current-name");
+  const detail = document.getElementById("model-current-detail");
+  const variant = sheet.model?.variant || "";
+  if (name) name.textContent = selected ? modelDisplayName(selected) : "默认模型";
+  if (detail) {
+    detail.textContent = !selected
+      ? "选择提供商、模型和思考深度"
+      : !selected.variants?.length
+        ? `${providerLabel(selected.providerID)} · 无思考档位`
+        : `${providerLabel(selected.providerID)} · ${variant ? `思考：${variantLabel(variant)}` : "默认思考深度"}`;
+  }
+}
+
+function ensureVariantHost(option, model, selectedVariant) {
+  let host = option.querySelector(".model-variants");
+  if (!host) {
+    host = document.createElement("div");
+    host.className = "model-variants";
+    option.appendChild(host);
+  }
+  host.innerHTML = variantChipsHTML(model, selectedVariant);
+}
+
+function updateModelSelectionDOM() {
+  const sheet = state.sheet;
+  if (!sheet) return;
+  const selected = selectedSheetModel(sheet);
+  for (const option of document.querySelectorAll("#model-tree .model-option")) {
+    const isSelected =
+      Boolean(selected) &&
+      option.dataset.provider === selected.providerID &&
+      option.dataset.model === selected.id;
+    option.classList.toggle("selected", isSelected);
+    const check = option.querySelector(".model-check");
+    if (check) check.hidden = !isSelected;
+    const host = option.querySelector(".model-variants");
+    if (isSelected && selected.variants?.length) {
+      ensureVariantHost(option, selected, sheet.model?.variant || "");
+      host?.removeAttribute("hidden");
+    } else if (host) {
+      host.remove();
+    }
+  }
+  for (const group of document.querySelectorAll("#model-tree .model-provider")) {
+    const marker = group.querySelector(".provider-selected");
+    const isSelectedProvider = Boolean(selected) && group.dataset.provider === selected.providerID;
+    if (marker) marker.hidden = !isSelectedProvider;
+    group.dataset.defaultOpen = isSelectedProvider ? "1" : "0";
+    if (isSelectedProvider) group.open = true;
+  }
+  updateModelSummary();
+}
+
+function selectSheetModel(providerID, modelID) {
+  if (!state.sheet) return;
+  const model = (state.models || []).find(
+    (item) => item.providerID === providerID && item.id === modelID,
+  );
+  if (!model) return;
+  const current = state.sheet.model;
+  state.sheet.model = {
+    providerID: model.providerID,
+    id: model.id,
+    variant:
+      current?.providerID === model.providerID && current?.id === model.id
+        ? current.variant || ""
+        : "",
+  };
+  updateModelSelectionDOM();
+}
+
+function selectSheetVariant(providerID, modelID, variant) {
+  if (!state.sheet) return;
+  const selected = selectedSheetModel(state.sheet);
+  if (!selected || selected.providerID !== providerID || selected.id !== modelID) return;
+  state.sheet.model = { providerID, id: modelID, variant: variant || "" };
+  const option = [...document.querySelectorAll("#model-tree .model-option")].find(
+    (item) => item.dataset.provider === providerID && item.dataset.model === modelID,
+  );
+  if (option) {
+    for (const chip of option.querySelectorAll(".variant-chip")) {
+      chip.classList.toggle("active", (chip.dataset.variant || "") === (variant || ""));
+    }
+  }
+  updateModelSummary();
+}
+
+function toggleModelPicker() {
+  const body = document.getElementById("model-picker-body");
+  const button = document.querySelector('[data-action="toggle-model-picker"]');
+  if (!body || !button) return;
+  const open = body.hidden;
+  body.hidden = !open;
+  button.textContent = open ? "收起" : "选择模型";
+  button.setAttribute("aria-expanded", String(open));
+  if (open) {
+    filterModelPicker(document.getElementById("model-search")?.value || "");
+    requestAnimationFrame(() => {
+      const tree = document.getElementById("model-tree");
+      const selected = tree?.querySelector(".model-option.selected");
+      if (tree && selected) {
+        const treeRect = tree.getBoundingClientRect();
+        const rect = selected.getBoundingClientRect();
+        if (rect.top < treeRect.top || rect.bottom > treeRect.bottom) {
+          tree.scrollTop += rect.top - treeRect.top - 8;
+        }
+      }
+      document.getElementById("model-search")?.focus({ preventScroll: true });
+    });
+  }
+}
+
+
 function computeActivity(active, sessions) {
   const byID = new Map((sessions || []).map((session) => [session.id, session]));
   const sessionRoots = {};
@@ -962,7 +1253,7 @@ function openSheet(config = {}) {
     directory: config.directory || state.projects[0]?.canonical || "",
     title: config.title || "",
     agent: config.agent || "",
-    model: config.model || "",
+    model: normalizeModel(config.model) || null,
   };
   if (state.sheet.type === "new" && !state.models) loadModelsAndAgents();
   render();
@@ -988,7 +1279,6 @@ function syncSheetFromDOM() {
   if (document.getElementById("sheet-directory")) state.sheet.directory = value("sheet-directory");
   if (document.getElementById("sheet-new-title")) state.sheet.title = value("sheet-new-title");
   if (document.getElementById("sheet-agent")) state.sheet.agent = value("sheet-agent");
-  if (document.getElementById("sheet-model")) state.sheet.model = value("sheet-model");
 }
 
 async function loadModelsAndAgents() {
@@ -1012,11 +1302,23 @@ function renderSheet(force = false) {
     existing.remove();
   }
 
-  if (sheet.type === "new" && state.models && !sheet.model) {
-    const available = state.models.filter((model) => model.enabled && model.status === "active");
-    const preferred = available.find((model) => /deepseek/i.test(model.id || model.modelID || ""));
-    const first = preferred || available[0];
-    if (first) sheet.model = `${first.providerID}/${first.id}`;
+  if (sheet.type === "new" && state.models && !sheet.model?.id) {
+    const available = modelGroups().flatMap((group) => group.models);
+    const preferred =
+      available.find(
+        (model) =>
+          model.providerID === "opencode-go" &&
+          /deepseek-v4\.1-flash/i.test(model.id || model.modelID || ""),
+      ) ||
+      available.find(
+        (model) => model.providerID === "opencode-go" && /deepseek/i.test(model.id || model.modelID || ""),
+      ) ||
+      available.find((model) => /deepseek-v4\.1-flash/i.test(model.id || model.modelID || "")) ||
+      available.find((model) => /deepseek/i.test(model.id || model.modelID || "")) ||
+      available[0];
+    if (preferred) {
+      sheet.model = { providerID: preferred.providerID, id: preferred.id, variant: "" };
+    }
   }
 
   const isEdit = sheet.type === "edit";
@@ -1030,13 +1332,6 @@ function renderSheet(force = false) {
       (project) =>
         `<option value="${esc(project.canonical)}" ${sheet.directory === project.canonical ? "selected" : ""}>${esc(projectName(project.canonical))} — ${esc(project.canonical)}</option>`,
     )
-    .join("");
-  const modelOptions = (state.models || [])
-    .filter((model) => model.enabled && model.status === "active")
-    .map((model) => {
-      const value = `${model.providerID}/${model.id}`;
-      return `<option value="${esc(value)}" ${sheet.model === value ? "selected" : ""}>${esc(model.id)}${model.variants?.length ? ` (+${model.variants.length} variants)` : ""}</option>`;
-    })
     .join("");
   const agentOptions = (state.agents || [])
     .filter((agent) => agent.mode !== "subagent" && !agent.hidden)
@@ -1070,15 +1365,13 @@ function renderSheet(force = false) {
               <label for="sheet-new-title">新会话标题（可选）</label>
               <input class="input" id="sheet-new-title" value="${esc(sheet.title)}" placeholder="例如：夜里的想法" />
             </div>
-            <div class="grid-2">
-              <div class="field">
-                <label for="sheet-model">模型</label>
-                <select class="select" id="sheet-model">${modelOptions || `<option value="">默认</option>`}</select>
-              </div>
-              <div class="field">
-                <label for="sheet-agent">Agent</label>
-                <select class="select" id="sheet-agent"><option value="">默认</option>${agentOptions}</select>
-              </div>
+            <div class="field">
+              <label>模型与思考深度</label>
+              ${renderModelPicker(sheet)}
+            </div>
+            <div class="field">
+              <label for="sheet-agent">Agent</label>
+              <select class="select" id="sheet-agent"><option value="">默认</option>${agentOptions}</select>
             </div>`
           : `<div class="sheet-target">
               <div class="sheet-target-copy">
@@ -1208,7 +1501,6 @@ function syncSheetField(target) {
   if (target.id === "sheet-directory") state.sheet.directory = target.value;
   if (target.id === "sheet-new-title") state.sheet.title = target.value;
   if (target.id === "sheet-agent") state.sheet.agent = target.value;
-  if (target.id === "sheet-model") state.sheet.model = target.value;
 }
 
 function closeSheet() {
@@ -1302,10 +1594,12 @@ async function submitSheet() {
       directory: document.getElementById("sheet-directory")?.value || "",
       title: document.getElementById("sheet-new-title")?.value?.trim() || null,
     };
-    const modelValue = document.getElementById("sheet-model")?.value || "";
-    const [providerID, ...rest] = modelValue.split("/");
-    if (providerID && rest.length) {
-      payload.model = { providerID, id: rest.join("/") };
+    if (sheet.model?.providerID && sheet.model?.id) {
+      payload.model = {
+        providerID: sheet.model.providerID,
+        id: sheet.model.id,
+        ...(sheet.model.variant ? { variant: sheet.model.variant } : {}),
+      };
     }
     const agent = document.getElementById("sheet-agent")?.value;
     if (agent) payload.agent = agent;
@@ -1766,6 +2060,18 @@ sheetHost.addEventListener("click", (event) => {
     setQuickTime(actionEl.dataset.when);
     return;
   }
+  if (action === "toggle-model-picker") {
+    toggleModelPicker();
+    return;
+  }
+  if (action === "model-select") {
+    selectSheetModel(actionEl.dataset.provider, actionEl.dataset.model);
+    return;
+  }
+  if (action === "model-variant") {
+    selectSheetVariant(actionEl.dataset.provider, actionEl.dataset.model, actionEl.dataset.variant || "");
+    return;
+  }
   if (action === "delete-schedule") {
     cancelSchedule(id).then((cancelled) => {
       if (cancelled) closeSheet();
@@ -1774,11 +2080,18 @@ sheetHost.addEventListener("click", (event) => {
 });
 
 sheetHost.addEventListener("input", (event) => {
-  if (event.target.closest?.("#sheet-root")) syncSheetField(event.target);
+  if (event.target.closest?.("#sheet-root")) {
+    syncSheetField(event.target);
+    if (event.target.id === "model-search") filterModelPicker(event.target.value);
+  }
 });
 
 sheetHost.addEventListener("change", (event) => {
   if (event.target.closest?.("#sheet-root")) syncSheetField(event.target);
+});
+
+sheetHost.addEventListener("search", (event) => {
+  if (event.target.id === "model-search") filterModelPicker(event.target.value);
 });
 
 app.addEventListener("input", (event) => {

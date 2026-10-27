@@ -27,7 +27,7 @@ OpenCode V2 有完整的 HTTP API，但没有 cron 或延时发送。现有工�
 - **失败可见。** 会话忙就等；OpenCode 离线就重试；超过宽限标记“已错过”，不把半夜的想法中午突然发出去。
 - **手机优先。** ~110 KB 级 PWA、底部输入框、安全区适配、可安装。
 - **完整视图不重造。** 一键跳到 OpenCode 原生会话页（深链），保留全部工具输出、diff、图片。
-- **零依赖。** `node:http` + `node:sqlite` + 原生 `fetch`，`npm pack` 约 150 KB。
+- **零依赖。** `node:http` + `node:sqlite` + 原生 `fetch`，`npm pack` 约 160 KB。
 
 ## 功能
 
@@ -35,7 +35,7 @@ OpenCode V2 有完整的 HTTP API，但没有 cron 或延时发送。现有工�
 |---|---|
 | 会话列表 | 跨项目列出根会话，显示运行/空闲/子代理运行、模型、最后活动、成本与 token |
 | 已有会话发送 | 客户端生成 `msg_` id，服务端幂等 |
-| 新建会话发送 | 可指定标题、目录、模型、agent，再发送 |
+| 新建会话发送 | 可指定标题、目录、模型与思考深度（按提供商折叠的树形选择）、agent，再发送 |
 | 一次性定时 | 存绝对 UTC + 原始 IANA 时区；手机端按本地时区选择 |
 | 忙闲策略 | 等空闲（默认 30 分钟）/ 插入当前轮 / 跳过 |
 | 宽限窗口 | 机器关机后 120 分钟内才补发，超时转人工 |
@@ -242,7 +242,7 @@ V2.1 原生不支持。它有 durable inbox（`delivery: queue`），但没有�
 ```bash
 git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
 cd opencode-scheduled-messages
-npm test          # 40 个测试，无网络、无依赖
+npm test          # 41 个测试，无网络、无依赖
 node bin/ocsched.js --help
 ```
 

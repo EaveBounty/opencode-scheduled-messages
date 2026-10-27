@@ -5,7 +5,7 @@
 Canonical page: https://eavebounty.github.io/opencode-scheduled-messages/
 Repository: https://github.com/EaveBounty/opencode-scheduled-messages
 npm: pending publication
-Version: 0.1.0 (2026-10-26)
+Version: 0.1.0 (2026-10-27)
 License: PolyForm Noncommercial License 1.0.0
 
 ## What it is
@@ -25,7 +25,7 @@ License: PolyForm Noncommercial License 1.0.0
 
 ## Measured facts
 
-- npm tarball: 150 KB packed, 333 KB unpacked, 28 files (`npm pack`, 2026-10-26).
+- npm tarball: 158 KB packed, 367 KB unpacked, 28 files (`npm pack`, 2026-10-27).
 - Tests: 40 passing via `npm test`, no network and no LLM calls.
 - Idle memory: 70-110 MB RSS, peak near 150 MB (docs/ARCHITECTURE.md).
 - Scheduler tick: 10 seconds; grace window: 120 minutes; busy wait: 30 minutes.

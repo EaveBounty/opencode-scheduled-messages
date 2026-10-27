@@ -42,7 +42,7 @@ OpenCode V2 exposes a first-class HTTP API (`POST /api/session/{id}/prompt`), bu
 - **Honest about failure.** Busy sessions wait, offline servers retry, stale ideas become `missed` instead of silently firing at noon.
 - **Phone-first.** A ~110 KB PWA, bottom composer, safe-area support, installable over HTTPS.
 - **Full-fidelity view when you need it.** One tap opens OpenCode's own native session UI through a deep link.
-- **Zero runtime dependencies.** `node:http`, `node:sqlite`, native `fetch`. `npm pack` is ~150 KB.
+- **Zero runtime dependencies.** `node:http`, `node:sqlite`, native `fetch`. `npm pack` is ~160 KB.
 
 ## Features
 
@@ -50,7 +50,7 @@ OpenCode V2 exposes a first-class HTTP API (`POST /api/session/{id}/prompt`), bu
 |---|---|
 | **Session browser** | Lists root sessions from every project, shows running/idle/subagent activity, model, last activity, cost and tokens. |
 | **Existing-session send** | `POST /api/session/{id}/prompt` with a client-generated `msg_` id for idempotency. |
-| **New-session send** | Creates a session with title, directory, model and agent, then sends the message. |
+| **New-session send** | Creates a session with title, directory, model and reasoning depth (searchable provider tree), and agent, then sends the message. |
 | **One-shot scheduling** | Absolute UTC time + original IANA timezone; the phone's timezone is used at creation. |
 | **Busy policy** | Wait up to 30 minutes for idle (default), steer into the current turn, or skip. |
 | **Grace window** | If the machine was off, send only within 120 minutes; otherwise mark `missed` for manual resend. |
@@ -279,7 +279,7 @@ Not in 0.1. The data model has room for it, but one-shot is deliberate: the use 
 ```bash
 git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
 cd opencode-scheduled-messages
-npm test                 # 40 tests, no network, no dependencies
+npm test                 # 41 tests, no network, no dependencies
 node bin/ocsched.js --help
 ```
 

@@ -15,7 +15,7 @@ Thanks for helping. This project is deliberately small; the bar for new runtime 
 ```bash
 git clone https://github.com/EaveBounty/opencode-scheduled-messages.git
 cd opencode-scheduled-messages
-npm test                 # 40 tests, no network
+npm test                 # 41 tests, no network
 node bin/ocsched.js --help
 ```
 

@@ -11,6 +11,8 @@ All notable changes to this project are documented here.
 - Subagent-only activity is mapped from child sessions to the root session, so the UI shows `子代理运行中` instead of `空闲`.
 - Composer now has exactly two explicit actions: `立即发送` (confirmation sheet) and `定时发送` (time sheet); the misleading auto-send placeholder is gone.
 - UI refresh: calmer paper/forest palette, clearer status strip, mobile-safe two-action composer, larger sheet close target.
+- New-session model picker is now a searchable provider → model → reasoning-depth tree; the selected `variant` is stored and sent to OpenCode.
+- New-session `target.title` is now persisted on the schedule instead of being dropped.
 
 
 ## [0.1.0] — 2026-10-26
@@ -32,7 +34,7 @@ Initial release.
 - Server-side Basic auth injection; access-token login; CSRF origin checks; CSP.
 - `ocsched doctor`, `ocsched service print|install`, systemd unit with memory caps.
 - DeepSeek peak/off-peak hint (official UTC windows).
-- 40 tests with a fake OpenCode client; no network or LLM calls.
+- 41 tests with a fake OpenCode client; no network or LLM calls.
 
 ### Hardening
 
